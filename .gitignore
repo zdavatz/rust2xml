@@ -1,5 +1,7 @@
 /target
 /downloads
+/run_output
+/run_output_b
 Cargo.lock.bak
 *.tmp
 *.log
