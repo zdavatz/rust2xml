@@ -7,21 +7,37 @@ and emits a bundle of XML files plus an optional legacy `.dat`.
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
 Ruby gem, written in Rust.
 
-## Record-count parity with oddb2xml -e
+## Parity with oddb2xml -e
 
-Measured on 2026-04-24 against oddb2xml 3.0.4, same live data sources.
+Measured on 2026-04-24 against oddb2xml 3.0.4 using the same live data
+sources. Record counts are the primary signal; sizes track roughly with
+how much per-record content each file carries.
 
-| File | rust2xml | oddb2xml | Delta |
-|---|---:|---:|---:|
-| `oddb_interaction.xml` | 15,920 | 15,920 | **100.0%** |
-| `oddb_code.xml` | 5 | 5 | **100.0%** |
-| `oddb_article.xml` | 180,690 | 180,714 | **100.0%** |
-| `oddb_substance.xml` | 1,389 | 1,405 | 98.9% |
-| `oddb_limitation.xml` | 2,295 | 2,368 | 96.9% |
-| `oddb_product.xml` | 18,162 | 17,173 | 105.8% |
+| File | rust2xml records | oddb2xml records | Delta | rust2xml size | oddb2xml size |
+|---|---:|---:|---:|---:|---:|
+| `oddb_interaction.xml` | 15,920 | 15,920 | **100.0%** | 12.8 MB | 14.6 MB |
+| `oddb_code.xml` | 5 | 5 | **100.0%** | 0.5 KB | 1.5 KB |
+| `oddb_article.xml` | 180,690 | 180,714 | **100.0%** | 108 MB | 140 MB |
+| `oddb_substance.xml` | 1,389 | 1,405 | 98.9% | 0.2 MB | 0.2 MB |
+| `oddb_limitation.xml` | 2,295 | 2,368 | 96.9% | 4.6 MB | 4.8 MB |
+| `oddb_product.xml` | 18,162 | 17,173 | 105.8% | 13.2 MB | 15.7 MB |
+| `oddb_calc.xml` | 18,162 | n/a | — | 12 MB | 41 MB |
 
 Runtime: **~3 s** fresh download, **~17 s** including ZurRose's 177 K
 transfer.dat parse. Well under a minute end-to-end.
+
+Schema shapes match Ruby where it matters:
+- `<ART>` uses Ruby's nested `<ARTBAR>` (CDTYP / BC / BCSTAT) and one
+  `<ARTPRI>` per price type (FACTORY / PUBLIC / ZURROSE / ZURROSEPUB).
+- `<PRD>` carries GTIN, PRODNO, ATC, IT, CPT, PackGrSwissmedic,
+  EinheitSwissmedic, SubstanceSwissmedic, CompositionSwissmedic.
+- `<LIM>` carries SwissmedicNo5, IT, LIMTYP, LIMVAL, LIMNAMEBAG,
+  LIMNIV, DSCRD, DSCRF, VDAT.
+- `<CAL>` carries GTIN, PHAR, NAMD, NAMF, ATC, IT, PACKSIZE, UNIT,
+  FORM, GROUP, OID, SUBSTANCE, COMPOSITION.
+- Every top-level child has a `SHA256` attribute over the
+  concatenated descendant text — same contract Ruby consumers rely on
+  via `Oddb2xml.verify_sha256`.
 
 ## Build
 
@@ -109,9 +125,21 @@ Implied-flag cascade (same behaviour as Ruby):
 cargo test              # unit + integration
 ```
 
-23+ option-parity tests, per-module unit tests, and an end-to-end
-integration test that runs a canned BAG XML fixture through the
-extractor → builder chain and asserts SHA256 attributes are emitted.
+41 unit tests + 1 integration test:
+
+- 23 option-parity tests (one per Ruby flag + every implied-flag
+  cascade rule).
+- `util` tests for GTIN checksum, HTML decode, EAN ↔ ProdNo ↔ No8
+  bidirectional maps, CRLF handling.
+- `calc` tests including the ordering invariant
+  (Filmtablette substring matches before Tablette) and the
+  "every-form-has-an-OID" structural check.
+- Composition-grammar parse tests (single substance, comma-separated
+  list, multi-line).
+- Extractor tests for LPPV text files and EPha CSV.
+- Builder tests confirming SHA256 attribute emission.
+- Integration test that roundtrips a BAG XML fixture through extractor
+  → builder and asserts the SHA256 / content plumbing.
 
 ## Architecture
 

@@ -4,22 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 37 unit tests + 1 integration test pass.
+Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 41 unit tests + 1 integration test pass.
 
 ### Record-count parity with `oddb2xml -e`
 
 Measured 2026-04-24 against oddb2xml 3.0.4, same live sources:
 
-| File | rust2xml | oddb2xml | Delta |
-|---|---:|---:|---:|
-| `oddb_interaction.xml` | 15,920 | 15,920 | **100.0%** |
-| `oddb_code.xml` | 5 | 5 | **100.0%** |
-| `oddb_article.xml` | 180,690 | 180,714 | **100.0%** |
-| `oddb_substance.xml` | 1,389 | 1,405 | 98.9% |
-| `oddb_limitation.xml` | 2,295 | 2,368 | 96.9% |
-| `oddb_product.xml` | 18,162 | 17,173 | 105.8% |
+| File | rust2xml recs | oddb2xml recs | Δ | rust2xml size | oddb2xml size |
+|---|---:|---:|---:|---:|---:|
+| `oddb_interaction.xml` | 15,920 | 15,920 | **100.0%** | 12.8 MB | 14.6 MB |
+| `oddb_code.xml` | 5 | 5 | **100.0%** | 0.5 KB | 1.5 KB |
+| `oddb_article.xml` | 180,690 | 180,714 | **100.0%** | 108 MB | 140 MB |
+| `oddb_substance.xml` | 1,389 | 1,405 | 98.9% | 0.2 MB | 0.2 MB |
+| `oddb_limitation.xml` | 2,295 | 2,368 | 96.9% | 4.6 MB | 4.8 MB |
+| `oddb_product.xml` | 18,162 | 17,173 | 105.8% | 13.2 MB | 15.7 MB |
+| `oddb_calc.xml` | 18,162 | n/a | — | 12 MB | 41 MB |
 
 Runtime: ~3 s fresh download / ~17 s with ZurRose's 177 K transfer.dat parse.
+
+Schema shapes match Ruby on `<ART>` (nested `<ARTBAR>` with CDTYP / BC /
+BCSTAT, multiple `<ARTPRI>` for FACTORY / PUBLIC / ZURROSE /
+ZURROSEPUB), `<PRD>`, `<LIM>`, `<CAL>`, `<IX>`, `<SB>` and `<CD>`.
+Every top-level child still gets a `SHA256` attribute over its
+concatenated descendant text — same contract Ruby consumers rely on
+via `Oddb2xml.verify_sha256`.
 
 ## Build / test
 
@@ -54,11 +62,11 @@ name belongs to the Ruby project.
 | `lib/oddb2xml/foph_sl_downloader.rb` | `foph_sl_downloader` | Minimal stub (the Ruby file is also a stub). |
 | `lib/oddb2xml/compositions_syntax.rb` | `compositions_syntax` + `src/compositions.pest` | Pest grammar (covers common patterns — substance name + dose + unit + q.s./pro/ad/ratio modifiers, comma-separated list). |
 | `lib/oddb2xml/parslet_compositions.rb` | `parslet_compositions` | `parse` / `parse_compositions` wrappers around the pest parser. |
-| `lib/oddb2xml/calc.rb` | `calc` | Static `group_by_form` / `oid_for_form` / `oid_for_group` lookup tables. |
+| `lib/oddb2xml/calc.rb` | `calc` | Static `group_by_form` / `oid_for_form` / `oid_for_group` lookup tables covering 100+ Swissmedic forms across 12 galenic groups. Ordering matters: longer substrings first (e.g. `Filmtablette` before `Tablette`) — enforced by a unit test. |
 | `lib/oddb2xml/chapter_70_hack.rb` | `chapter_70_hack` | HTML table scrape producing synthetic GTINs (`FAKE_GTIN_START + pharmacode`). |
 | `lib/oddb2xml/semantic_check.rb` | `semantic_check` | `every_product_number_is_unique` + `every_item_number_is_unique` over generated XML. |
-| `lib/oddb2xml/builder.rb` | `builder` | 7 XML output shapes (`product`, `article`, `substance`, `limitation`, `interaction`, `code`, `calc`) + `.dat`. Each top-level child carries a `SHA256` attribute over the hex digest of its joined text. |
-| `lib/oddb2xml/cli.rb` | `cli` + `src/bin/oddb2xml.rs` | Parallel download+extract via rayon; FHIR-first path is the default when `--fhir` or `--fhir-url` is set; legacy BAG XML otherwise. |
+| `lib/oddb2xml/builder.rb` | `builder` | 7 XML output shapes (`product`, `article`, `substance`, `limitation`, `interaction`, `code`, `calc`) + `.dat`. Uses an internal `Node` enum so emitters can produce nested children (needed for `<ART>`'s `<ARTBAR>`/`<ARTPRI>`). Each top-level child carries a `SHA256` attribute over the hex digest of its joined descendant text. |
+| `lib/oddb2xml/cli.rb` | `cli` + `src/bin/rust2xml.rs` | Parallel download+extract via rayon; FHIR-first path is the default when `--fhir` or `--fhir-url` is set; legacy BAG XML otherwise. Union of BAG + Refdata pharma + Refdata non-pharma + ZurRose + Firstbase feeds all articles. |
 | `lib/oddb2xml/compare.rb` | `compare` + `src/bin/compare_v5.rs` | GTIN-keyed diff of two output XMLs. |
 
 ## Hard-problem mapping
@@ -77,26 +85,34 @@ name belongs to the Ruby project.
 
 ## Known limitations vs. the Ruby gem (to-do list)
 
-- **`<ART>` schema is flat, not nested.** Ruby emits `<ART>` with
-  `<ARTBAR>` (one per barcode, holding CDTYP/BC/BCSTAT) and `<ARTPRI>`
-  (one per price type: ZURROSE / ZURROSEPUB / FACTORY / PUBLIC).
-  rust2xml currently emits flat `<GTIN>`/`<PEXF>`/`<PPUB>`/`<PRICE>`
-  fields. Record count matches (180,690 vs 180,714, 100.0%); the
-  shape does not. Fixing this means generalising the builder's emitter
-  to support nested child nodes — tracked work for phase 8.5.
 - **Composition grammar is permissive.** The pest grammar accepts the
   common patterns in Swissmedic's `Zusammensetzung` column but does
   not reproduce every Parslet quirk (fix-coded identifiers like
   `F.E.I.B.A.`, radio isotopes like `Xenonum (133-Xe)`, etc.).
 - **No NTLM / SOAP.** `MedregbmDownloader` uses plain HTTP; if the
   endpoint regresses to NTLM we need an `ntlm-auth` crate dance.
-- **No Artikelstamm v3/v5 generator.** Hooks exist but the XML shape
-  itself isn't emitted yet.
-- **Galenic form table is a subset.** `calc.rs` has ~20 forms / 7
-  groups; the Ruby YAML had many more.
-- **RSpec port.** 16 spec files / ~6,500 lines of RSpec. Only 38 Rust
-  tests landed — the architectural pieces are covered, per-file
-  parity is not.
+- **No Artikelstamm v3/v5 XML emitter.** The `--artikelstamm` flag
+  wires up the right inputs (extended + ZurRose) but the actual
+  `Elexis_Artikelstamm_v5.xsd`-compliant output shape is not yet
+  produced.
+- **RSpec port.** 16 spec files / ~6,500 lines of RSpec. Currently
+  41 unit + 1 integration Rust tests cover the architectural pieces;
+  per-file RSpec parity is not yet complete.
+- **`oddb_calc.xml` content density still trails Ruby** (12 MB vs
+  41 MB). Record count is in the right ballpark; the gap is in
+  composition richness — the Ruby builder pulls composition detail
+  from several extra sources.
+
+### Resolved (prior debt)
+
+- ART schema — now uses Ruby's nested `<ARTBAR>`/`<ARTPRI>` shape.
+- Galenic form table — expanded from ~20 entries to 100+ across 12
+  groups (Tabletten, Kapseln, Parenteralia, Oralia flüssig,
+  Ophthalmica, Otica, Nasalia, Externa, Suppositorien, Vaginalia,
+  Pulver, Inhalanda).
+- ZurRose loading — CRLF handling bug fixed; all 177 K transfer.dat
+  rows now extract correctly.
+- Firstbase — wired into `-b` pipeline as the 5th article source.
 
 ## Releasing
 
