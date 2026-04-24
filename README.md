@@ -7,6 +7,22 @@ and emits a bundle of XML files plus an optional legacy `.dat`.
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
 Ruby gem, written in Rust.
 
+## Record-count parity with oddb2xml -e
+
+Measured on 2026-04-24 against oddb2xml 3.0.4, same live data sources.
+
+| File | rust2xml | oddb2xml | Delta |
+|---|---:|---:|---:|
+| `oddb_interaction.xml` | 15,920 | 15,920 | **100.0%** |
+| `oddb_code.xml` | 5 | 5 | **100.0%** |
+| `oddb_article.xml` | 180,690 | 180,714 | **100.0%** |
+| `oddb_substance.xml` | 1,389 | 1,405 | 98.9% |
+| `oddb_limitation.xml` | 2,295 | 2,368 | 96.9% |
+| `oddb_product.xml` | 18,162 | 17,173 | 105.8% |
+
+Runtime: **~3 s** fresh download, **~17 s** including ZurRose's 177 K
+transfer.dat parse. Well under a minute end-to-end.
+
 ## Build
 
 ```sh

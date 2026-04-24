@@ -4,7 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-First-pass Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC) that generates Swiss drug database XML/DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 21 unit tests + 1 integration test pass.
+Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 37 unit tests + 1 integration test pass.
+
+### Record-count parity with `oddb2xml -e`
+
+Measured 2026-04-24 against oddb2xml 3.0.4, same live sources:
+
+| File | rust2xml | oddb2xml | Delta |
+|---|---:|---:|---:|
+| `oddb_interaction.xml` | 15,920 | 15,920 | **100.0%** |
+| `oddb_code.xml` | 5 | 5 | **100.0%** |
+| `oddb_article.xml` | 180,690 | 180,714 | **100.0%** |
+| `oddb_substance.xml` | 1,389 | 1,405 | 98.9% |
+| `oddb_limitation.xml` | 2,295 | 2,368 | 96.9% |
+| `oddb_product.xml` | 18,162 | 17,173 | 105.8% |
+
+Runtime: ~3 s fresh download / ~17 s with ZurRose's 177 K transfer.dat parse.
 
 ## Build / test
 
@@ -62,12 +77,26 @@ name belongs to the Ruby project.
 
 ## Known limitations vs. the Ruby gem (to-do list)
 
-- **Builder merge logic is thinner.** The Ruby builder is 1,922 lines of dense merges across 8+ sources; the Rust builder currently emits its 7 output shapes but draws fields mostly from the BAG feed. Enriching articles with refdata/zurrose/swissmedic fields in the merge step is phase-8.5 work.
-- **Composition grammar is permissive.** The Pest grammar accepts the common patterns in Swissmedic's `Zusammensetzung` column but does not reproduce every Parslet quirk (fix-coded identifiers like `F.E.I.B.A.`, radio isotopes like `Xenonum (133-Xe)`, etc.). Add rules as real-world inputs demand.
-- **No NTLM / SOAP.** `MedregbmDownloader` uses plain HTTP; if the endpoint regresses to NTLM we need an `ntlm-auth` crate dance.
-- **No Artikelstamm v3/v5 generator.** Hooks exist but the XML shape itself isn't emitted yet.
-- **Galenic form table is a subset.** `calc.rs` has ~20 forms/7 groups; the Ruby YAML had many more.
-- **RSpec port.** 16 spec files / ~6,500 lines. Only 22 Rust tests landed — the architectural pieces are covered but per-file parity is not.
+- **`<ART>` schema is flat, not nested.** Ruby emits `<ART>` with
+  `<ARTBAR>` (one per barcode, holding CDTYP/BC/BCSTAT) and `<ARTPRI>`
+  (one per price type: ZURROSE / ZURROSEPUB / FACTORY / PUBLIC).
+  rust2xml currently emits flat `<GTIN>`/`<PEXF>`/`<PPUB>`/`<PRICE>`
+  fields. Record count matches (180,690 vs 180,714, 100.0%); the
+  shape does not. Fixing this means generalising the builder's emitter
+  to support nested child nodes — tracked work for phase 8.5.
+- **Composition grammar is permissive.** The pest grammar accepts the
+  common patterns in Swissmedic's `Zusammensetzung` column but does
+  not reproduce every Parslet quirk (fix-coded identifiers like
+  `F.E.I.B.A.`, radio isotopes like `Xenonum (133-Xe)`, etc.).
+- **No NTLM / SOAP.** `MedregbmDownloader` uses plain HTTP; if the
+  endpoint regresses to NTLM we need an `ntlm-auth` crate dance.
+- **No Artikelstamm v3/v5 generator.** Hooks exist but the XML shape
+  itself isn't emitted yet.
+- **Galenic form table is a subset.** `calc.rs` has ~20 forms / 7
+  groups; the Ruby YAML had many more.
+- **RSpec port.** 16 spec files / ~6,500 lines of RSpec. Only 38 Rust
+  tests landed — the architectural pieces are covered, per-file
+  parity is not.
 
 ## Related Rust projects in this workspace
 

@@ -9,7 +9,8 @@ use crate::builder::{Builder, Inputs};
 use crate::compressor::{CompressExt, Compressor};
 use crate::downloader::{self, SwissmedicKind};
 use crate::extractor::{
-    BagXmlExtractor, EphaExtractor, LppvExtractor, RefdataExtractor,
+    BagXmlExtractor, EphaExtractor, FirstbaseExtractor, LppvExtractor,
+    RefdataExtractor,
     swissmedic::{SwissmedicExtractor, SwissmedicKind as ExtKind},
     ZurroseExtractor,
 };
@@ -168,6 +169,17 @@ impl Cli {
             Ok(())
         }));
 
+        // Firstbase GS1 CSV — non-pharma items published by GS1 CH.
+        if self.opts.firstbase {
+            jobs.push(Box::new(|store: &Mutex<Inputs>| {
+                let d = downloader::FirstbaseDownloader::new()?;
+                let path = d.download()?;
+                let h = FirstbaseExtractor::new(&path).to_hash()?;
+                store.lock().unwrap().firstbase.extend(h);
+                Ok(())
+            }));
+        }
+
         // ZurRose transfer.dat — supplies PHAR / PRICE / VAT / VDAT.
         let want_zurrose = self.opts.price.is_some()
             || self.opts.extended
@@ -207,12 +219,13 @@ impl Cli {
         inputs.release_date = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
         if self.opts.log {
             eprintln!(
-                "  sources: bag={}, refdata_pharma={}, refdata_nonpharma={}, swissmedic={}, zurrose={}, epha={}, lppv={}",
+                "  sources: bag={}, refdata_pharma={}, refdata_nonpharma={}, swissmedic={}, zurrose={}, firstbase={}, epha={}, lppv={}",
                 inputs.bag.len(),
                 inputs.refdata_pharma.len(),
                 inputs.refdata_nonpharma.len(),
                 inputs.swissmedic_packages.len(),
                 inputs.zurrose.len(),
+                inputs.firstbase.len(),
                 inputs.epha_interactions.len(),
                 inputs.lppv_ean13s.len(),
             );

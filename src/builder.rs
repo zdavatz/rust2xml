@@ -13,7 +13,7 @@
 //! `Oddb2xml.verify_sha256` in the Ruby source.
 
 use crate::extractor::{
-    BagItem, EphaInteraction, RefdataItem, SwissmedicPackage, ZurroseItem,
+    BagItem, EphaInteraction, FirstbaseItem, RefdataItem, SwissmedicPackage, ZurroseItem,
 };
 use crate::options::Options;
 use anyhow::Result;
@@ -32,6 +32,7 @@ pub struct Inputs {
     pub swissmedic_packages: HashMap<String, SwissmedicPackage>,
     pub swissmedic_orphans: Vec<String>,
     pub zurrose: HashMap<String, ZurroseItem>,
+    pub firstbase: HashMap<String, FirstbaseItem>,
     pub epha_interactions: Vec<EphaInteraction>,
     pub lppv_ean13s: HashMap<String, bool>,
     pub release_date: String,
@@ -457,6 +458,30 @@ impl Builder {
                 ("PPUBZR".into(), zr.pub_price.clone()),
                 ("VAT".into(), zr.vat.clone()),
                 ("VDAT".into(), String::new()),
+                ("SMCAT".into(), String::new()),
+                ("SMNO".into(), String::new()),
+                ("LIMPTS".into(), String::new()),
+            ]);
+        }
+
+        // 5. Firstbase GS1 non-pharma articles — included when `-b` /
+        //    `--firstbase` is set.
+        for (gtin, fb) in &self.inputs.firstbase {
+            if !emitted.insert(gtin.clone()) {
+                continue;
+            }
+            out.push(vec![
+                ("GTIN".into(), gtin.clone()),
+                ("PHAR".into(), String::new()),
+                ("PRODNO".into(), String::new()),
+                ("DSCRD".into(), fb.trade_item_description_de.clone()),
+                ("DSCRF".into(), fb.trade_item_description_fr.clone()),
+                ("PEXF".into(), String::new()),
+                ("PPUB".into(), String::new()),
+                ("PRICE".into(), String::new()),
+                ("PPUBZR".into(), String::new()),
+                ("VAT".into(), String::new()),
+                ("VDAT".into(), fb.start_availability_date.clone()),
                 ("SMCAT".into(), String::new()),
                 ("SMNO".into(), String::new()),
                 ("LIMPTS".into(), String::new()),
