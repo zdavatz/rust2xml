@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 41 unit tests + 1 integration test pass.
 
+Current released version: **v3.0.5** (the first tag cut from the Rust port).
+
+When bumping the version, keep `Cargo.toml` and `src/version.rs` in sync — they are checked independently and a mismatch will show up in `rust2xml --version`.
+
 ### Record-count parity with `oddb2xml -e`
 
 Measured 2026-04-24 against oddb2xml 3.0.4, same live sources:

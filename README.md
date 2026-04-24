@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust.
+Ruby gem, written in Rust. Current version: **v3.0.5**.
 
 ## Parity with oddb2xml -e
 
@@ -155,14 +155,19 @@ Release. Each archive contains `rust2xml`, `compare_v5`,
 
 ### Cutting a release
 
-Bump `version` in `Cargo.toml` (e.g. `3.0.4` → `3.0.5`), commit, then
-push a `vX.Y.Z` tag:
+Bump `version` in `Cargo.toml` **and** the `VERSION` constant in
+`src/version.rs` (keep them in sync), commit, then push a `vX.Y.Z`
+tag:
 
 ```sh
-# bump patch version in Cargo.toml, commit, then:
-git tag v3.0.5
-git push origin v3.0.5
+# bump patch version in Cargo.toml + src/version.rs, commit, then:
+git tag v3.0.6
+git push origin v3.0.6
 ```
+
+The current released version is **v3.0.5** — the first tag cut from
+the Rust port. Bump the patch (`v3.0.6`), minor (`v3.1.0`) or major
+(`v4.0.0`) segment depending on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,
