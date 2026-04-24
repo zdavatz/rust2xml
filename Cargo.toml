@@ -1,0 +1,131 @@
+[package]
+name = "rust2xml"
+version = "3.0.4"
+edition = "2021"
+rust-version = "1.75"
+description = "Rust port of oddb2xml — creates Swiss drug database XML/DAT files from swissINDEX, BAG-XML/FHIR and Swissmedic"
+license = "GPL-3.0-only"
+authors = [
+    "Yasuhiro Asaka <yasaka@ywesee.com>",
+    "Zeno R.R. Davatz <zdavatz@ywesee.com>",
+    "Niklaus Giger <ngiger@ywesee.com>",
+]
+homepage = "https://github.com/zdavatz/rust2xml"
+repository = "https://github.com/zdavatz/rust2xml"
+
+[[bin]]
+name = "oddb2xml"
+path = "src/bin/oddb2xml.rs"
+
+[[bin]]
+name = "compare_v5"
+path = "src/bin/compare_v5.rs"
+
+[[bin]]
+name = "check_artikelstamm"
+path = "src/bin/check_artikelstamm.rs"
+
+[lib]
+name = "oddb2xml"
+path = "src/lib.rs"
+
+[dependencies]
+# CLI — replaces `optimist`
+clap = { version = "4.5", features = ["derive"] }
+
+# HTTP / downloads — replaces `mechanize` + `open-uri` + `rest-client`
+reqwest = { version = "0.12", features = ["blocking", "cookies", "native-tls", "gzip", "json", "stream"], default-features = false }
+tokio = { version = "1", features = ["full"] }
+
+# FTP — for ZurRose transfer.dat (pillbox.oddb.org)
+suppaftp = { version = "6", features = ["native-tls"] }
+
+# HTML scraping — replaces Nokogiri's HTML parsing in SwissmedicDownloader + chapter_70_hack
+scraper = "0.20"
+html-escape = "0.2"
+
+# XML — replaces `nokogiri`, `sax-machine`, `ox`, `xml-simple`, `rexml`
+quick-xml = { version = "0.36", features = ["serialize"] }
+serde = { version = "1", features = ["derive"] }
+serde-xml-rs = "0.6"
+
+# JSON / NDJSON — for FHIR support
+serde_json = "1"
+
+# CSV — epha interactions, firstbase, oddb_calc
+csv = "1.3"
+
+# Excel — replaces `rubyXL` (.xlsx) + `spreadsheet` (.xls) via a single crate
+calamine = "0.26"
+
+# ZIP — replaces `rubyzip`
+zip = { version = "2", default-features = false, features = ["deflate", "time"] }
+
+# tar.gz — replaces `minitar`
+tar = "0.4"
+flate2 = "1"
+
+# YAML — for galenic-group / override tables used by calc.rb + builder.rb
+serde_yaml = "0.9"
+
+# Char encoding — ISO-8859-1 / ISO-8859-14 (ZurRose transfer.dat) / UTF-8
+encoding_rs = "0.8"
+encoding_rs_io = "0.1"
+
+# SHA256 — top-element hashing in output XMLs
+sha2 = "0.10"
+hex = "0.4"
+
+# PEG parser — replaces Parslet for composition grammar
+pest = "2.7"
+pest_derive = "2.7"
+
+# Regex — used throughout Ruby; mirror in Rust
+regex = "1.10"
+once_cell = "1.20"
+lazy_static = "1.5"
+
+# Dates — date parsing for limitation valid-thru, expiry_date, filename stamping
+chrono = { version = "0.4", features = ["serde"] }
+
+# Concurrency — port of CLI's Thread + Mutex orchestration
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+rayon = "1.10"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging — replaces Oddb2xml.log
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Filesystem helpers
+tempfile = "3.13"
+walkdir = "2.5"
+
+# URL parsing
+url = "2.5"
+
+[build-dependencies]
+# Compile the pest grammar at build time
+# (pest_derive handles this via proc-macro, no build.rs step needed)
+
+[dev-dependencies]
+# Test helpers — rspec analogues
+rstest = "0.23"
+pretty_assertions = "1.4"
+wiremock = "0.6"
+tempfile = "3.13"
+serial_test = "3.1"
+insta = { version = "1.41", features = ["yaml"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+
+[profile.dev]
+opt-level = 0
+debug = true

@@ -1,0 +1,31 @@
+/target
+/downloads
+Cargo.lock.bak
+*.tmp
+*.log
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.bak
+
+# Output artifacts
+oddb_*.xml
+oddb_*.dat
+oddb_*.csv
+oddb_*.zip
+oddb_*.tar.gz
+
+# Transfer data (downloaded or cached)
+transfer.dat
+transfer.zip
+Preparations.xml
+Refdata.Articles.zip
+Refdata.Articles.xml
+XMLPublications.zip
+swissmedic_*.xlsx
+swissmedic_info.zip
+firstbase.csv
+medregbm_*.txt
+epha_interactions.csv
+oddb2xml_files_lppv.txt

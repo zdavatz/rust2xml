@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Preparations xmlns="http://bag.admin.ch/2007/sl" ReleaseDate="2026-04-24">
+  <Preparation ProductCommercial="12345">
+    <NameDe>AspirinCardio 100</NameDe>
+    <NameFr>AspirineCardio 100</NameFr>
+    <NameIt>AspirinCardio 100</NameIt>
+    <DescriptionDe>Filmtablette</DescriptionDe>
+    <DescriptionFr>Comprimé filmé</DescriptionFr>
+    <DescriptionIt>Compressa rivestita</DescriptionIt>
+    <AtcCode>B01AC06</AtcCode>
+    <SwissmedicNo5>55123</SwissmedicNo5>
+    <CommentDe></CommentDe>
+    <CommentFr></CommentFr>
+    <CommentIt></CommentIt>
+    <Substances>
+      <Substance>
+        <DescriptionLa>acidum acetylsalicylicum</DescriptionLa>
+        <Quantity>100</Quantity>
+        <QuantityUnit>mg</QuantityUnit>
+      </Substance>
+    </Substances>
+    <Packs>
+      <Pack ProductKey="A" PackId="1">
+        <DescriptionDe>30 Filmtabletten</DescriptionDe>
+        <DescriptionFr>30 comprimés</DescriptionFr>
+        <DescriptionIt>30 compresse</DescriptionIt>
+        <SwissmedicCategory>B</SwissmedicCategory>
+        <SwissmedicNo8>55123001</SwissmedicNo8>
+        <GTIN>7680551230013</GTIN>
+        <Prices>
+          <ExFactoryPrice>
+            <Price>5.50</Price>
+            <ValidFromDate>2026-01-01</ValidFromDate>
+            <PriceTypeCode>ZUL</PriceTypeCode>
+          </ExFactoryPrice>
+          <PublicPrice>
+            <Price>9.95</Price>
+            <ValidFromDate>2026-01-01</ValidFromDate>
+            <PriceTypeCode>PP</PriceTypeCode>
+          </PublicPrice>
+        </Prices>
+      </Pack>
+    </Packs>
+    <ItCodes>
+      <ItCode Code="02.06.1.">
+        <DescriptionDe>Thrombozytenaggregationshemmer</DescriptionDe>
+      </ItCode>
+    </ItCodes>
+  </Preparation>
+</Preparations>
