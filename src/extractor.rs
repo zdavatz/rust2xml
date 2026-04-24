@@ -170,7 +170,7 @@ impl BagXmlExtractor {
                 }
             }
 
-            let mut first_ean13: Option<String> = None;
+            let mut pack_ean13s: Vec<String> = Vec::new();
             if let Some(packs) = &seq.Packs {
                 for pac in &packs.Pack {
                     let mut gtin = pac.GTIN.clone();
@@ -237,15 +237,16 @@ impl BagXmlExtractor {
                         }
                     }
 
-                    if first_ean13.is_none() {
-                        first_ean13 = Some(ean13.clone());
-                    }
-                    item.packages.insert(ean13.clone(), package);
+                    pack_ean13s.push(ean13.clone());
+                    item.packages.insert(ean13, package);
                 }
             }
 
-            if let Some(ean13) = first_ean13 {
-                out.insert(ean13, item);
+            // Ruby semantics: `data[ean13] = item` runs inside the pack
+            // loop, so every pack's EAN-13 ends up as its own key pointing
+            // at the same (fully populated) item.
+            for ean13 in pack_ean13s {
+                out.insert(ean13, item.clone());
             }
         }
 

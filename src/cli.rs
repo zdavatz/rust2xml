@@ -7,9 +7,11 @@
 
 use crate::builder::{Builder, Inputs};
 use crate::compressor::{CompressExt, Compressor};
-use crate::downloader;
+use crate::downloader::{self, SwissmedicKind};
 use crate::extractor::{
     BagXmlExtractor, EphaExtractor, LppvExtractor, RefdataExtractor,
+    swissmedic::{SwissmedicExtractor, SwissmedicKind as ExtKind},
+    ZurroseExtractor,
 };
 use crate::fhir_support::{FhirDownloader, FhirExtractor, DEFAULT_FHIR_URL};
 use crate::options::{Format, Options};
@@ -154,6 +156,43 @@ impl Cli {
             Ok(())
         }));
 
+        // Swissmedic packages.xlsx — supplies GTIN, PRODNO, IT,
+        // PackGrSwissmedic, EinheitSwissmedic, SubstanceSwissmedic,
+        // CompositionSwissmedic per no8.
+        jobs.push(Box::new(|store: &Mutex<Inputs>| {
+            let d = downloader::SwissmedicDownloader::new(SwissmedicKind::Package)?;
+            let path = d.download()?;
+            let e = SwissmedicExtractor::new(&path, ExtKind::Package);
+            let h = e.to_hash()?;
+            store.lock().unwrap().swissmedic_packages.extend(h);
+            Ok(())
+        }));
+
+        // ZurRose transfer.dat — supplies PHAR / PRICE / VAT / VDAT.
+        let want_zurrose = self.opts.price.is_some()
+            || self.opts.extended
+            || self.opts.artikelstamm
+            || self.opts.percent.is_some();
+        if want_zurrose {
+            let transfer_dat_path = self.opts.transfer_dat.clone();
+            jobs.push(Box::new(move |store: &Mutex<Inputs>| {
+                let text = if let Some(path) = &transfer_dat_path {
+                    // Operator passed a path — read it as ISO-8859 and decode.
+                    let bytes = fs::read(path)
+                        .with_context(|| format!("reading {path}"))?;
+                    let (cow, _, _) = encoding_rs::WINDOWS_1252.decode(&bytes);
+                    cow.into_owned()
+                } else {
+                    let d = downloader::ZurroseDownloader::new()?;
+                    d.download()?
+                };
+                let e = ZurroseExtractor::new(text, true, false);
+                let h = e.to_hash();
+                store.lock().unwrap().zurrose.extend(h);
+                Ok(())
+            }));
+        }
+
         // Run the jobs in parallel.  Any single failure is logged but
         // does not abort the whole run — matches the Ruby behaviour of
         // warning and pressing on.
@@ -166,6 +205,18 @@ impl Cli {
 
         let mut inputs = inputs.into_inner().unwrap();
         inputs.release_date = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+        if self.opts.log {
+            eprintln!(
+                "  sources: bag={}, refdata_pharma={}, refdata_nonpharma={}, swissmedic={}, zurrose={}, epha={}, lppv={}",
+                inputs.bag.len(),
+                inputs.refdata_pharma.len(),
+                inputs.refdata_nonpharma.len(),
+                inputs.swissmedic_packages.len(),
+                inputs.zurrose.len(),
+                inputs.epha_interactions.len(),
+                inputs.lppv_ean13s.len(),
+            );
+        }
         Ok(inputs)
     }
 }

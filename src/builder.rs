@@ -97,16 +97,33 @@ impl Builder {
         )
     }
 
-    /// `oddb_limitation.xml`.
+    /// `oddb_limitation.xml`.  Emits Ruby's LIM schema:
+    /// `<SwissmedicNo5>`, `<IT>`, `<LIMTYP>`, `<LIMVAL>`, `<LIMNAMEBAG>`,
+    /// `<LIMNIV>`, `<DSCRD>`, `<DSCRF>`, `<VDAT>`.  Deduplicated by
+    /// (SwissmedicNo5, LIMNAMEBAG, LIMTYP, LIMVAL).
     pub fn build_limitation(&self) -> Result<String> {
+        let mut seen: std::collections::HashSet<(String, String, String, String)> =
+            std::collections::HashSet::new();
         let mut nodes: Vec<Vec<(String, String)>> = Vec::new();
         for item in self.inputs.bag.values() {
             for pkg in item.packages.values() {
                 for lim in &pkg.limitations {
+                    let key = (
+                        item.swissmedic_number5.clone(),
+                        lim.code.clone(),
+                        lim.r#type.clone(),
+                        lim.value.clone(),
+                    );
+                    if !seen.insert(key) {
+                        continue;
+                    }
                     nodes.push(vec![
+                        ("SwissmedicNo5".into(), item.swissmedic_number5.clone()),
+                        ("IT".into(), lim.it.clone()),
                         ("LIMTYP".into(), lim.r#type.clone()),
                         ("LIMVAL".into(), lim.value.clone()),
-                        ("LIMCD".into(), lim.code.clone()),
+                        ("LIMNAMEBAG".into(), lim.code.clone()),
+                        ("LIMNIV".into(), lim.niv.clone()),
                         ("DSCRD".into(), lim.desc_de.clone()),
                         ("DSCRF".into(), lim.desc_fr.clone()),
                         ("VDAT".into(), lim.vdate.clone()),
@@ -149,20 +166,39 @@ impl Builder {
         )
     }
 
-    /// `oddb_code.xml` — small catalog of status codes.
+    /// `oddb_code.xml` — static catalog of status codes.  Matches
+    /// the Ruby builder's hard-coded list.
     pub fn build_code(&self) -> Result<String> {
         let nodes: Vec<Vec<(String, String)>> = vec![
             vec![
                 ("CDTYP".into(), "11".into()),
-                ("CDVAL".into(), "A".into()),
-                ("DSCRD".into(), "aktiv".into()),
-                ("DSCRF".into(), "actif".into()),
+                ("CDVAL".into(), "X".into()),
+                ("DSCRSD".into(), "Kontraindiziert".into()),
+                ("DEL".into(), "false".into()),
             ],
             vec![
                 ("CDTYP".into(), "11".into()),
-                ("CDVAL".into(), "I".into()),
-                ("DSCRD".into(), "inaktiv".into()),
-                ("DSCRF".into(), "inactif".into()),
+                ("CDVAL".into(), "O".into()),
+                ("DSCRSD".into(), "Nur in Ausnahmefällen".into()),
+                ("DEL".into(), "false".into()),
+            ],
+            vec![
+                ("CDTYP".into(), "11".into()),
+                ("CDVAL".into(), "R".into()),
+                ("DSCRSD".into(), "Strenge Indikationsstellung".into()),
+                ("DEL".into(), "false".into()),
+            ],
+            vec![
+                ("CDTYP".into(), "11".into()),
+                ("CDVAL".into(), "V".into()),
+                ("DSCRSD".into(), "Vorsichtsmassnahmen".into()),
+                ("DEL".into(), "false".into()),
+            ],
+            vec![
+                ("CDTYP".into(), "11".into()),
+                ("CDVAL".into(), "U".into()),
+                ("DSCRSD".into(), "Unbedenklich".into()),
+                ("DEL".into(), "false".into()),
             ],
         ];
         self.build("CODE", "CD", &nodes, &self.inputs.release_date)
@@ -204,15 +240,59 @@ impl Builder {
     // -- internals ---------------------------------------------------
 
     fn product_nodes(&self) -> Vec<Vec<(String, String)>> {
+        // One PRD per EAN-13 in the merged bag/swissmedic map — Ruby
+        // emits at this granularity, not per-preparation.
         let mut out: Vec<Vec<(String, String)>> = Vec::new();
+        let mut emitted_ean13: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         let suffix = self.opts.tag_suffix.clone().unwrap_or_default();
 
-        for (_ean13, item) in &self.inputs.bag {
+        for (ean13, item) in &self.inputs.bag {
+            // Look up Swissmedic data for this pack specifically
+            // (ean13 keys our bag map, and each bag item carries the
+            // pack's no8 via packages[ean13]).
+            let no8 = item
+                .packages
+                .get(ean13)
+                .map(|p| p.swissmedic_number8.clone())
+                .unwrap_or_default();
+            let smdata = self.inputs.swissmedic_packages.get(&no8);
+            emitted_ean13.insert(ean13.clone());
+
+            let prodno = smdata.map(|s| s.prodno.clone()).unwrap_or_default();
+            let it_code = smdata
+                .map(|s| s.ith_swissmedic.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| item.it_code.clone());
+            let pack_size = smdata.map(|s| s.package_size.clone()).unwrap_or_default();
+            let einheit = smdata.map(|s| s.einheit_swissmedic.clone()).unwrap_or_default();
+            let substance = smdata
+                .map(|s| s.substance_swissmedic.clone())
+                .unwrap_or_default();
+            let composition = smdata
+                .map(|s| s.composition_swissmedic.clone())
+                .unwrap_or_default();
+            let gtin = smdata
+                .map(|s| s.ean13.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| ean13.clone());
+            let atc = smdata
+                .map(|s| s.atc_code.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| item.atc_code.clone());
+
             let mut fields: Vec<(String, String)> = vec![
-                ("PRDNO".into(), item.swissmedic_number5.clone()),
+                ("GTIN".into(), gtin),
+                ("PRODNO".into(), prodno),
                 ("DSCRD".into(), item.desc_de.clone()),
                 ("DSCRF".into(), item.desc_fr.clone()),
-                ("ATC".into(), item.atc_code.clone()),
+                ("ATC".into(), atc),
+                ("IT".into(), it_code),
+                ("CPT".into(), String::new()),
+                ("PackGrSwissmedic".into(), pack_size),
+                ("EinheitSwissmedic".into(), einheit),
+                ("SubstanceSwissmedic".into(), substance),
+                ("CompositionSwissmedic".into(), composition),
             ];
             if !suffix.is_empty() {
                 for (k, _) in &mut fields {
@@ -222,28 +302,167 @@ impl Builder {
             }
             out.push(fields);
         }
+
+        // Add Swissmedic-only packages (products Swissmedic knows about
+        // but that never made it into BAG / SL).  Ruby's builder pulls
+        // from the merged map — we replicate with an explicit union.
+        for (_no8, sm) in &self.inputs.swissmedic_packages {
+            let ean13 = &sm.ean13;
+            if emitted_ean13.contains(ean13) {
+                continue;
+            }
+            emitted_ean13.insert(ean13.clone());
+            let mut fields: Vec<(String, String)> = vec![
+                ("GTIN".into(), ean13.clone()),
+                ("PRODNO".into(), sm.prodno.clone()),
+                ("DSCRD".into(), sm.sequence_name.clone()),
+                ("DSCRF".into(), String::new()),
+                ("ATC".into(), sm.atc_code.clone()),
+                ("IT".into(), sm.ith_swissmedic.clone()),
+                ("CPT".into(), String::new()),
+                ("PackGrSwissmedic".into(), sm.package_size.clone()),
+                ("EinheitSwissmedic".into(), sm.einheit_swissmedic.clone()),
+                ("SubstanceSwissmedic".into(), sm.substance_swissmedic.clone()),
+                ("CompositionSwissmedic".into(), sm.composition_swissmedic.clone()),
+            ];
+            if !suffix.is_empty() {
+                for (k, _) in &mut fields {
+                    k.push('_');
+                    k.push_str(&suffix);
+                }
+            }
+            out.push(fields);
+        }
+
         out
     }
 
     fn article_nodes(&self) -> Vec<Vec<(String, String)>> {
         let mut out: Vec<Vec<(String, String)>> = Vec::new();
-        for (ean13, item) in &self.inputs.bag {
-            for (_, pkg) in &item.packages {
-                let mut fields = vec![
-                    ("GTIN".into(), ean13.clone()),
+        let mut emitted: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        // 1. Every pack of every BAG preparation — SL/pharma articles.
+        for (_, item) in &self.inputs.bag {
+            for (pkg_ean13, pkg) in &item.packages {
+                if !emitted.insert(pkg_ean13.clone()) {
+                    continue;
+                }
+                let zr = self.inputs.zurrose.get(pkg_ean13);
+                let no8 = &pkg.swissmedic_number8;
+                let sm = self.inputs.swissmedic_packages.get(no8);
+                let prodno = sm.map(|s| s.prodno.clone()).unwrap_or_default();
+                let phar = zr.map(|z| z.pharmacode.clone()).unwrap_or_default();
+                let price = zr
+                    .map(|z| z.price.clone())
+                    .unwrap_or_else(|| pkg.prices.exf_price.price.clone());
+                let pub_price = zr
+                    .map(|z| z.pub_price.clone())
+                    .unwrap_or_else(|| pkg.prices.pub_price.price.clone());
+                let vat = zr.map(|z| z.vat.clone()).unwrap_or_default();
+                let vdat = pkg.prices.exf_price.valid_date.clone();
+
+                out.push(vec![
+                    ("GTIN".into(), pkg_ean13.clone()),
+                    ("PHAR".into(), phar),
+                    ("PRODNO".into(), prodno),
                     ("DSCRD".into(), pkg.desc_de.clone()),
                     ("DSCRF".into(), pkg.desc_fr.clone()),
                     ("PEXF".into(), pkg.prices.exf_price.price.clone()),
                     ("PPUB".into(), pkg.prices.pub_price.price.clone()),
+                    ("PRICE".into(), price),
+                    ("PPUBZR".into(), pub_price),
+                    ("VAT".into(), vat),
+                    ("VDAT".into(), vdat),
                     ("SMCAT".into(), pkg.swissmedic_category.clone()),
                     ("SMNO".into(), pkg.swissmedic_number8.clone()),
-                ];
-                if let Some(zp) = self.inputs.zurrose.get(ean13) {
-                    fields.push(("PRVL".into(), zp.price.clone()));
-                }
-                out.push(fields);
+                    ("LIMPTS".into(), pkg.limitation_points.clone()),
+                ]);
             }
         }
+
+        // 2. Refdata non-pharma entries — MiGeL, medical devices, OTC
+        //    products that never went through the SL/BAG listing.
+        for (ean13, r) in &self.inputs.refdata_nonpharma {
+            if !emitted.insert(ean13.clone()) {
+                continue;
+            }
+            let zr = self.inputs.zurrose.get(ean13);
+            let phar = zr.map(|z| z.pharmacode.clone()).unwrap_or_default();
+            let price = zr.map(|z| z.price.clone()).unwrap_or_default();
+            let pub_price = zr.map(|z| z.pub_price.clone()).unwrap_or_default();
+            let vat = zr.map(|z| z.vat.clone()).unwrap_or_default();
+            out.push(vec![
+                ("GTIN".into(), ean13.clone()),
+                ("PHAR".into(), phar),
+                ("PRODNO".into(), String::new()),
+                ("DSCRD".into(), r.desc_de.clone()),
+                ("DSCRF".into(), r.desc_fr.clone()),
+                ("PEXF".into(), String::new()),
+                ("PPUB".into(), String::new()),
+                ("PRICE".into(), price),
+                ("PPUBZR".into(), pub_price),
+                ("VAT".into(), vat),
+                ("VDAT".into(), String::new()),
+                ("SMCAT".into(), String::new()),
+                ("SMNO".into(), r.no8.clone()),
+                ("LIMPTS".into(), String::new()),
+            ]);
+        }
+
+        // 3. Refdata pharma entries not already covered by BAG — e.g.
+        //    preparations that dropped off the SL but are still sold.
+        for (ean13, r) in &self.inputs.refdata_pharma {
+            if !emitted.insert(ean13.clone()) {
+                continue;
+            }
+            let zr = self.inputs.zurrose.get(ean13);
+            let phar = zr.map(|z| z.pharmacode.clone()).unwrap_or_default();
+            let price = zr.map(|z| z.price.clone()).unwrap_or_default();
+            let pub_price = zr.map(|z| z.pub_price.clone()).unwrap_or_default();
+            let vat = zr.map(|z| z.vat.clone()).unwrap_or_default();
+            out.push(vec![
+                ("GTIN".into(), ean13.clone()),
+                ("PHAR".into(), phar),
+                ("PRODNO".into(), String::new()),
+                ("DSCRD".into(), r.desc_de.clone()),
+                ("DSCRF".into(), r.desc_fr.clone()),
+                ("PEXF".into(), String::new()),
+                ("PPUB".into(), String::new()),
+                ("PRICE".into(), price),
+                ("PPUBZR".into(), pub_price),
+                ("VAT".into(), vat),
+                ("VDAT".into(), String::new()),
+                ("SMCAT".into(), String::new()),
+                ("SMNO".into(), r.no8.clone()),
+                ("LIMPTS".into(), String::new()),
+            ]);
+        }
+
+        // 4. ZurRose-only articles (not in BAG nor Refdata) — captured
+        //    via the `--extended` non-pharma pipeline.
+        for (ean13, zr) in &self.inputs.zurrose {
+            if !emitted.insert(ean13.clone()) {
+                continue;
+            }
+            out.push(vec![
+                ("GTIN".into(), ean13.clone()),
+                ("PHAR".into(), zr.pharmacode.clone()),
+                ("PRODNO".into(), String::new()),
+                ("DSCRD".into(), zr.description.clone()),
+                ("DSCRF".into(), String::new()),
+                ("PEXF".into(), String::new()),
+                ("PPUB".into(), String::new()),
+                ("PRICE".into(), zr.price.clone()),
+                ("PPUBZR".into(), zr.pub_price.clone()),
+                ("VAT".into(), zr.vat.clone()),
+                ("VDAT".into(), String::new()),
+                ("SMCAT".into(), String::new()),
+                ("SMNO".into(), String::new()),
+                ("LIMPTS".into(), String::new()),
+            ]);
+        }
+
         out
     }
 

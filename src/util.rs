@@ -81,10 +81,14 @@ pub fn patch_some_utf8(line: &str) -> String {
             other => other,
         })
         .collect();
-    // `String#chomp` trims a trailing \n or \r\n only.
+    // `String#chomp` trims a trailing \n or \r\n only.  We also strip a
+    // bare trailing \r, which appears after splitting a CRLF file on
+    // '\n'.
     if let Some(stripped) = replaced.strip_suffix("\r\n") {
         stripped.to_string()
     } else if let Some(stripped) = replaced.strip_suffix('\n') {
+        stripped.to_string()
+    } else if let Some(stripped) = replaced.strip_suffix('\r') {
         stripped.to_string()
     } else {
         replaced
