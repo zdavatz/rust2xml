@@ -11,13 +11,17 @@ First-pass Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC) that genera
 ```sh
 cargo build             # library + 3 binaries
 cargo test              # unit + integration tests
-cargo run --bin oddb2xml -- --help
+cargo run --bin rust2xml -- --help
 ```
 
 Binaries:
-- `oddb2xml` — main CLI (ports `bin/oddb2xml`).
-- `compare_v5` — diff two Artikelstamm XML files (ports `bin/compare_v5`).
-- `check_artikelstamm` — run semantic checks on output XML (ports `bin/check_artikelstamm`).
+- `rust2xml` — main CLI.
+- `compare_v5` — diff two Artikelstamm XML files.
+- `check_artikelstamm` — run semantic checks on output XML.
+
+The crate itself is named `rust2xml` (both the library and the main
+binary). Do not reintroduce `oddb2xml` as a Rust identifier — that
+name belongs to the Ruby project.
 
 ## Architecture — 1:1 mapping from Ruby modules
 

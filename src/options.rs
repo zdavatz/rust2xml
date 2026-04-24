@@ -92,9 +92,9 @@ impl Default for Options {
 /// can run the implied-flag logic in one pass).
 #[derive(Parser, Debug)]
 #[command(
-    name = "oddb2xml",
+    name = "rust2xml",
     version = crate::version::VERSION,
-    about = "oddb2xml creates XML/DAT files from Swiss drug data sources",
+    about = "rust2xml creates XML/DAT files from Swiss drug data sources",
     long_about = None,
 )]
 struct RawArgs {
@@ -186,7 +186,7 @@ impl Options {
         T: Into<std::ffi::OsString> + Clone,
     {
         let raw = RawArgs::try_parse_from(
-            std::iter::once(std::ffi::OsString::from("oddb2xml"))
+            std::iter::once(std::ffi::OsString::from("rust2xml"))
                 .chain(argv.into_iter().map(Into::into)),
         )
         .map_err(|e| e.to_string())?;
@@ -244,7 +244,7 @@ impl Options {
         }
 
         if matches!(opts.format, Format::Xml) {
-            opts.ean14 = true; // `bin/oddb2xml` forces this.
+            opts.ean14 = true; // xml format always forces ean14.
         }
 
         opts.address = matches!(raw.context.to_lowercase().as_str(), "address" | "addr");

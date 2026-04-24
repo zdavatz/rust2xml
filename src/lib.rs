@@ -1,9 +1,7 @@
-//! rust2xml — Rust port of oddb2xml.
+//! rust2xml — Swiss drug database XML/DAT generator.
 //!
-//! Generates Swiss drug database XML (+ legacy `.dat`) from public sources:
+//! Generates XML (+ legacy `.dat`) from public sources:
 //! Refdata, BAG-XML / FOPH FHIR, Swissmedic, ZurRose, EPha, Migel, Firstbase.
-//!
-//! Ported from the Ruby gem at <https://github.com/zdavatz/oddb2xml>.
 
 pub mod version;
 

@@ -1,8 +1,11 @@
 # rust2xml
 
-Rust port of [oddb2xml](https://github.com/zdavatz/oddb2xml) — the tool that
-generates Swiss drug database XML / DAT files from public sources
-(Refdata, BAG/FOPH FHIR, Swissmedic, ZurRose, EPha, Migel, Firstbase).
+Swiss drug database XML / DAT generator — pulls from public sources
+(Refdata, BAG/FOPH FHIR, Swissmedic, ZurRose, EPha, Migel, Firstbase)
+and emits a bundle of XML files plus an optional legacy `.dat`.
+
+Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
+Ruby gem, written in Rust.
 
 ## Build
 
@@ -12,27 +15,27 @@ cargo build --release
 
 Three binaries land in `target/release/`:
 
-- `oddb2xml` — main CLI (port of `bin/oddb2xml`).
-- `compare_v5` — diff two Artikelstamm-style XML files (port of `bin/compare_v5`).
-- `check_artikelstamm` — validate unique PRODNO/GTIN in an output XML (port of `bin/check_artikelstamm`).
+- `rust2xml` — main CLI.
+- `compare_v5` — diff two Artikelstamm-style XML files.
+- `check_artikelstamm` — validate unique PRODNO/GTIN in an output XML.
 
 ## Quick start
 
 ```sh
 # XML (default)
-./target/release/oddb2xml
+./target/release/rust2xml
 
 # Extended pharma + non-pharma + ZurRose prices + oddb_calc.xml
-./target/release/oddb2xml -e
+./target/release/rust2xml -e
 
 # Use the new FHIR NDJSON feed instead of BAG XML
-./target/release/oddb2xml --fhir
+./target/release/rust2xml --fhir
 
 # Artikelstamm v3/v5 (Elexis ≥ 3.1)
-./target/release/oddb2xml --artikelstamm
+./target/release/rust2xml --artikelstamm
 
 # Cache downloads — re-uses files already under ./downloads/
-./target/release/oddb2xml -e --skip-download --log
+./target/release/rust2xml -e --skip-download --log
 ```
 
 ## Generated files (XML mode)

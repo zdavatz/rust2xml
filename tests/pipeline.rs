@@ -1,9 +1,9 @@
 //! End-to-end-ish tests: feed canned fixtures through extractor → builder
 //! without touching the network.
 
-use oddb2xml::builder::{Builder, Inputs};
-use oddb2xml::extractor::BagXmlExtractor;
-use oddb2xml::options::Options;
+use rust2xml::builder::{Builder, Inputs};
+use rust2xml::extractor::BagXmlExtractor;
+use rust2xml::options::Options;
 
 #[test]
 fn bag_xml_to_product_xml_contains_sha256_and_name() {

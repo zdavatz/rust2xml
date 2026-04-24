@@ -1,7 +1,6 @@
-//! Run the semantic checks over an Artikelstamm XML — port of
-//! `bin/check_artikelstamm`.
+//! Run the semantic checks over an Artikelstamm XML.
 
-use oddb2xml::semantic_check::SemanticCheck;
+use rust2xml::semantic_check::SemanticCheck;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

@@ -1,4 +1,4 @@
-//! Download adapters for the 11 data sources oddb2xml consumes.
+//! Download adapters for the 11 Swiss drug data sources.
 //! Port of `lib/oddb2xml/downloader.rb`.
 //!
 //! Design notes:
@@ -152,7 +152,7 @@ impl LppvDownloader {
     }
 
     pub fn download(&self) -> Result<Vec<u8>> {
-        let path = util::work_dir().join("oddb2xml_files_lppv.txt");
+        let path = util::work_dir().join("rust2xml_lppv.txt");
         download_as(&self.base.client, &self.base.url, &path)
     }
 }
@@ -323,7 +323,7 @@ impl MigelDownloader {
     }
 
     pub fn download(&self) -> Result<PathBuf> {
-        let path = util::downloads_dir().join("oddb2xml_files_nonpharma.xls");
+        let path = util::downloads_dir().join("rust2xml_nonpharma.xls");
         download_as(&self.base.client, &self.base.url, &path)?;
         Ok(path)
     }

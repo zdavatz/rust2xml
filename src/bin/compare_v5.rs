@@ -1,6 +1,6 @@
-//! Compare two Artikelstamm v5 files — port of `bin/compare_v5`.
+//! Compare two Artikelstamm v5 files.
 
-use oddb2xml::compare::compare_files;
+use rust2xml::compare::compare_files;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

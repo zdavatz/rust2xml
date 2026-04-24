@@ -1,7 +1,7 @@
-//! Main CLI entry — port of `bin/oddb2xml`.
+//! Main CLI entry.
 
-use oddb2xml::cli::Cli;
-use oddb2xml::options::Options;
+use rust2xml::cli::Cli;
+use rust2xml::options::Options;
 use std::process::ExitCode;
 use std::time::Instant;
 

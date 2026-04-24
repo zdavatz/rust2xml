@@ -161,7 +161,7 @@ pub struct FhirDownloader {
 impl FhirDownloader {
     pub fn new(url: impl Into<String>) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
-            .user_agent("rust2xml/oddb2xml-fhir")
+            .user_agent("rust2xml-fhir")
             .timeout(std::time::Duration::from_secs(600))
             .build()?;
         Ok(Self { url: url.into(), client })
