@@ -98,6 +98,28 @@ name belongs to the Ruby project.
   tests landed — the architectural pieces are covered, per-file
   parity is not.
 
+## Releasing
+
+Release pipeline lives in `.github/workflows/release.yml`. It triggers
+on any tag matching `vX.Y.Z` (or `vX.Y.Z-rc.N` for pre-releases) and
+produces archives for:
+
+- `x86_64-unknown-linux-gnu`
+- `aarch64-unknown-linux-gnu` (cross-compiled)
+- `x86_64-apple-darwin` (native on `macos-13`)
+- `aarch64-apple-darwin` (native on `macos-latest`)
+- `x86_64-pc-windows-msvc`
+
+Each archive bundles `rust2xml`, `compare_v5`, `check_artikelstamm`,
+`README.md`, `LICENSE` and ships with a `.sha256` sidecar.  The
+workflow uploads everything to a GitHub Release with auto-generated
+notes.  Bumping the patch version is the normal release cadence:
+edit `Cargo.toml` version → commit → `git tag vX.Y.Z` → `git push
+origin vX.Y.Z`.
+
+The workflow also has a `workflow_dispatch` trigger so releases can
+be re-run by hand from the Actions tab if an upload fails midway.
+
 ## Related Rust projects in this workspace
 
 - `fb2sqlite` — GS1 barcode registry + MiGeL (related data source).

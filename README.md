@@ -118,6 +118,36 @@ extractor → builder chain and asserts SHA256 attributes are emitted.
 See `CLAUDE.md` for the full 1:1 Ruby → Rust module mapping, the
 replacement crates for each Ruby gem, and the documented porting debt.
 
+## Releases
+
+Pre-built binaries for **Linux (x86_64 + aarch64)**, **macOS (Intel +
+Apple Silicon)** and **Windows (x86_64)** are attached to every GitHub
+Release. Each archive contains `rust2xml`, `compare_v5`,
+`check_artikelstamm`, README and LICENSE, plus a `.sha256` file.
+
+### Cutting a release
+
+Bump `version` in `Cargo.toml` (e.g. `3.0.4` → `3.0.5`), commit, then
+push a `vX.Y.Z` tag:
+
+```sh
+# bump patch version in Cargo.toml, commit, then:
+git tag v3.0.5
+git push origin v3.0.5
+```
+
+The `.github/workflows/release.yml` pipeline then:
+1. runs `cargo test --all --release` on Linux,
+2. builds release binaries on all five targets in parallel,
+3. packages them as `.tar.gz` (Unix) / `.zip` (Windows) with
+   accompanying `.sha256` files,
+4. creates (or updates) a GitHub Release for the tag with
+   auto-generated release notes.
+
+Pre-release tags (e.g. `v3.0.5-rc.1`) are marked as pre-release
+automatically. The workflow can also be dispatched manually from the
+Actions tab.
+
 ## License
 
 GPL-3.0-only, inherited from oddb2xml.

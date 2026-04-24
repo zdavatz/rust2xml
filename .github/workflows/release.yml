@@ -1,0 +1,194 @@
+name: Release
+
+# Fires whenever a semver tag `vX.Y.Z` is pushed.
+# Typical release flow:
+#
+#   # in Cargo.toml, bump version 3.0.4 → 3.0.5
+#   git commit -am "Release v3.0.5" && git push
+#   git tag v3.0.5 && git push origin v3.0.5
+#
+# This workflow then builds release binaries for Linux, macOS (x86_64
+# and arm64) and Windows, packages them, and attaches them to the
+# GitHub Release that gets created for the tag.
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name to release (e.g. v3.0.5)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  # Fail fast on any warning so we catch API drift before it ships.
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  # --- First gate: library + unit tests must pass on Linux --------------
+  test:
+    name: cargo test (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo test --all
+        run: cargo test --all --release
+
+  # --- Cross-platform build matrix --------------------------------------
+  build:
+    name: build ${{ matrix.target }}
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            binary-suffix: ""
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive: tar.gz
+            binary-suffix: ""
+            cross: true
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive: tar.gz
+            binary-suffix: ""
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive: tar.gz
+            binary-suffix: ""
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            archive: zip
+            binary-suffix: ".exe"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      # aarch64 Linux needs cross toolchain bits.
+      - name: install aarch64-linux gcc
+        if: matrix.cross
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          mkdir -p .cargo
+          cat >> .cargo/config.toml <<EOF
+          [target.aarch64-unknown-linux-gnu]
+          linker = "aarch64-linux-gnu-gcc"
+          EOF
+
+      - name: cargo build --release
+        run: cargo build --release --target ${{ matrix.target }} --bins
+
+      - name: resolve tag / version
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "stem=rust2xml-$tag-${{ matrix.target }}" >> "$GITHUB_OUTPUT"
+
+      - name: stage artifact contents
+        shell: bash
+        run: |
+          mkdir -p dist/${{ steps.vars.outputs.stem }}
+          cp "target/${{ matrix.target }}/release/rust2xml${{ matrix.binary-suffix }}" dist/${{ steps.vars.outputs.stem }}/
+          cp "target/${{ matrix.target }}/release/compare_v5${{ matrix.binary-suffix }}" dist/${{ steps.vars.outputs.stem }}/
+          cp "target/${{ matrix.target }}/release/check_artikelstamm${{ matrix.binary-suffix }}" dist/${{ steps.vars.outputs.stem }}/
+          cp README.md LICENSE dist/${{ steps.vars.outputs.stem }}/
+
+      - name: pack tar.gz
+        if: matrix.archive == 'tar.gz'
+        shell: bash
+        run: |
+          cd dist
+          tar czf "${{ steps.vars.outputs.stem }}.tar.gz" "${{ steps.vars.outputs.stem }}"
+          # SHA-256 — same tool on every Unix runner.
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${{ steps.vars.outputs.stem }}.tar.gz" > "${{ steps.vars.outputs.stem }}.tar.gz.sha256"
+          else
+            shasum -a 256 "${{ steps.vars.outputs.stem }}.tar.gz" > "${{ steps.vars.outputs.stem }}.tar.gz.sha256"
+          fi
+
+      - name: pack zip
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          cd dist
+          Compress-Archive -Path "${{ steps.vars.outputs.stem }}" -DestinationPath "${{ steps.vars.outputs.stem }}.zip"
+          (Get-FileHash "${{ steps.vars.outputs.stem }}.zip" -Algorithm SHA256).Hash.ToLower() + "  ${{ steps.vars.outputs.stem }}.zip" | Out-File -Encoding ASCII "${{ steps.vars.outputs.stem }}.zip.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.vars.outputs.stem }}
+          path: |
+            dist/${{ steps.vars.outputs.stem }}.tar.gz
+            dist/${{ steps.vars.outputs.stem }}.tar.gz.sha256
+            dist/${{ steps.vars.outputs.stem }}.zip
+            dist/${{ steps.vars.outputs.stem }}.zip.sha256
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # --- Attach everything to a GitHub Release ----------------------------
+  publish:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: list staged artifacts
+        run: ls -lh artifacts || true
+
+      - name: resolve tag
+        id: vars
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="${{ github.event.inputs.tag }}"
+          else
+            tag="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          name: rust2xml ${{ steps.vars.outputs.tag }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(steps.vars.outputs.tag, '-') }}
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.tar.gz.sha256
+            artifacts/*.zip
+            artifacts/*.zip.sha256
