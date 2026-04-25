@@ -1,6 +1,6 @@
 [package]
 name = "rust2xml"
-version = "3.1.2"
+version = "3.1.3"
 edition = "2021"
 rust-version = "1.75"
 description = "Swiss drug database XML/DAT generator — creates files from swissINDEX, BAG-XML/FHIR and Swissmedic"
@@ -122,6 +122,14 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # PNG decoder for the embedded app icon (rust2xml-gui).  Using `image`
 # because eframe already pulls it in transitively.
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Multi-resolution ICO encoder — used by the `make_ico` example to
+# regenerate `assets/icon.ico` whenever `assets/icon.png` changes.
+ico = "0.4"
+
+[target.'cfg(windows)'.build-dependencies]
+# Windows .exe icon embedding via build.rs.
+winresource = "0.1"
 
 [build-dependencies]
 # Compile the pest grammar at build time

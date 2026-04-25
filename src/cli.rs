@@ -137,11 +137,44 @@ impl Cli {
 
         if use_fhir {
             let url = fhir_url.unwrap_or_else(|| DEFAULT_FHIR_URL.to_string());
-            jobs.push(("BAG (FHIR)", Box::new(move |store: &Mutex<Inputs>| {
-                let d = FhirDownloader::new(url.clone())?;
-                let body = d.download()?;
-                let e = FhirExtractor::new(body);
-                let bag = e.to_hash()?;
+            jobs.push(("BAG (FHIR de/fr/it)", Box::new(move |store: &Mutex<Inputs>| {
+                // Primary German bundle.
+                let de_d = FhirDownloader::new(url.clone())?;
+                let de_body = de_d.download()?;
+                let de_extractor = FhirExtractor::new(de_body);
+                let mut bag = de_extractor.to_hash()?;
+
+                // FR + IT translations — same URL with the language
+                // suffix swapped.  Failures are logged and ignored so
+                // the run still completes if a language file is down.
+                for lang in ["fr", "it"] {
+                    let lang_url = url.replace("-de.ndjson", &format!("-{lang}.ndjson"));
+                    if lang_url == url {
+                        continue;
+                    }
+                    let dl = match FhirDownloader::new(lang_url.clone()) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            util::log(format!("FHIR {lang} downloader: {e}"));
+                            continue;
+                        }
+                    };
+                    match dl.download() {
+                        Ok(body) => {
+                            let ext = FhirExtractor::new_with_lang(body, lang);
+                            match ext.to_hash() {
+                                Ok(translation) => {
+                                    crate::fhir_support::merge_translations(
+                                        &mut bag, translation,
+                                    );
+                                }
+                                Err(e) => util::log(format!("FHIR {lang} extract: {e}")),
+                            }
+                        }
+                        Err(e) => util::log(format!("FHIR {lang} download: {e}")),
+                    }
+                }
+
                 store.lock().unwrap().bag.extend(bag);
                 Ok(())
             })));

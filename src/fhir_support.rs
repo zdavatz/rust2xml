@@ -279,7 +279,15 @@ impl FhirDownloader {
 
     pub fn download(&self) -> Result<String> {
         util::log(format!("FhirDownloader GET {}", self.url));
-        let path = util::work_dir().join("fhir_package_bundle.ndjson");
+        // Cache filename is derived from the URL so per-language files
+        // (de/fr/it) don't overwrite each other.
+        let filename = self
+            .url
+            .rsplit('/')
+            .next()
+            .filter(|s| s.ends_with(".ndjson"))
+            .unwrap_or("fhir_package_bundle.ndjson");
+        let path = util::work_dir().join(filename);
         let bytes = crate::downloader::download_as(&self.client, &self.url, &path)?;
         Ok(String::from_utf8_lossy(&bytes).into_owned())
     }
@@ -295,11 +303,28 @@ impl FhirDownloader {
 /// branching.
 pub struct FhirExtractor {
     pub ndjson: String,
+    /// Two-letter language tag — `"de"` (default), `"fr"` or `"it"`.
+    /// Decides which `BagLimitation::desc_*` field receives the
+    /// `limitationText` from the parsed Bundle.
+    pub lang: String,
 }
 
 impl FhirExtractor {
     pub fn new(ndjson: impl Into<String>) -> Self {
-        Self { ndjson: ndjson.into() }
+        Self {
+            ndjson: ndjson.into(),
+            lang: "de".into(),
+        }
+    }
+
+    /// Build an extractor for a non-default language file (`fr`/`it`).
+    /// Limitation texts are routed into `desc_fr` / `desc_it` instead
+    /// of `desc_de`.
+    pub fn new_with_lang(ndjson: impl Into<String>, lang: impl Into<String>) -> Self {
+        Self {
+            ndjson: ndjson.into(),
+            lang: lang.into(),
+        }
     }
 
     pub fn to_hash(&self) -> Result<HashMap<String, BagItem>> {
@@ -650,7 +675,64 @@ impl FhirExtractor {
             out.insert(ean13, item);
         }
 
+        // Move the limitation text into the right per-language field
+        // when extracting an FR/IT bundle.  The parser always writes
+        // into `desc_de`; we rewrite to `desc_fr`/`desc_it` here.
+        if self.lang != "de" {
+            for item in out.values_mut() {
+                for pkg in item.packages.values_mut() {
+                    for lim in &mut pkg.limitations {
+                        let text = std::mem::take(&mut lim.desc_de);
+                        match self.lang.as_str() {
+                            "fr" => lim.desc_fr = text,
+                            "it" => lim.desc_it = text,
+                            _ => lim.desc_de = text,
+                        }
+                    }
+                }
+            }
+        }
+
         Ok(out)
+    }
+}
+
+/// Merge FR/IT limitation translations into a primary (DE) extraction.
+/// Matches packages by EAN-13 and limitations by index — every
+/// language file derives from the same SL source so the per-package
+/// limitation list is in the same order across languages.
+pub fn merge_translations(
+    primary: &mut HashMap<String, BagItem>,
+    translation: HashMap<String, BagItem>,
+) {
+    for (ean13, t_item) in translation {
+        let de_item = match primary.get_mut(&ean13) {
+            Some(x) => x,
+            None => continue,
+        };
+        for (pkg_ean, t_pkg) in t_item.packages {
+            let de_pkg = match de_item.packages.get_mut(&pkg_ean) {
+                Some(x) => x,
+                None => continue,
+            };
+            // Item-level translated names too.
+            if !t_item.name_fr.is_empty() && de_item.name_fr.is_empty() {
+                de_item.name_fr = t_item.name_fr.clone();
+            }
+            if !t_item.name_it.is_empty() && de_item.name_it.is_empty() {
+                de_item.name_it = t_item.name_it.clone();
+            }
+            for (idx, t_lim) in t_pkg.limitations.into_iter().enumerate() {
+                if let Some(de_lim) = de_pkg.limitations.get_mut(idx) {
+                    if !t_lim.desc_fr.is_empty() {
+                        de_lim.desc_fr = t_lim.desc_fr;
+                    }
+                    if !t_lim.desc_it.is_empty() {
+                        de_lim.desc_it = t_lim.desc_it;
+                    }
+                }
+            }
+        }
     }
 }
 

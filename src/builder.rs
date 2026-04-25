@@ -200,6 +200,7 @@ impl Builder {
                         Node::leaf("LIMNIV", lim.niv.clone()),
                         Node::leaf("DSCRD", lim.desc_de.clone()),
                         Node::leaf("DSCRF", lim.desc_fr.clone()),
+                        Node::leaf("DSCIT", lim.desc_it.clone()),
                         Node::leaf("VDAT", lim.vdate.clone()),
                     ]);
                 }

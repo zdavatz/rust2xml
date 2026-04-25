@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.2**.
+Ruby gem, written in Rust. Current version: **v3.1.3**.
 
 ## Parity with oddb2xml -e
 
@@ -106,8 +106,14 @@ seven XML files:
   `ARTBAR_E13_BC` / `ARTBAR_E13_BCSTAT` for barcodes,
   `ARTPRI_FACTORY` / `ARTPRI_PUBLIC` / `ARTPRI_ZURROSE` /
   `ARTPRI_ZURROSEPUB` for the four price tiers — no JSON in cells.
+- Limitations carry trilingual descriptions: `DSCRD` (German),
+  `DSCRF` (French) and `DSCIT` (Italian).  The GUI fetches all three
+  FOPH FHIR exports (`-de.ndjson`, `-fr.ndjson`, `-it.ndjson`) and
+  merges the per-package limitation list by index.
 - Window icon is embedded into the binary so the app shows up
-  branded in the taskbar / Dock on Linux, macOS and Windows.
+  branded in the taskbar / Dock on Linux, macOS and Windows.  On
+  Windows the .ico is also linked into the .exe via `winresource`,
+  so Explorer / Start menu show the icon on disk too.
 
 The SQLite file is plain — open it with `sqlite3`, DBeaver, etc.
 Each run creates a fresh timestamped file; old runs stay on disk.
@@ -224,18 +230,15 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.2
-git push origin v3.1.2
+git tag v3.1.3
+git push origin v3.1.3
 ```
 
-The current released version is **v3.1.2** — limitations table now
-populates correctly under FHIR mode (lenient `type` deserialiser to
-handle the Bundle vs RegulatedAuthorization shape mismatch);
-limitations are now keyed at the package level
-(`SwissmedicNo8` + `GTIN` columns) with their description text in the
-dedup key so distinct entries don't collapse. Bump the patch
-(`v3.1.3`), minor (`v3.2.0`) or major (`v4.0.0`) segment depending
-on the nature of the change.
+The current released version is **v3.1.3** — trilingual limitation
+descriptions (DSCRD / DSCRF / DSCIT) merged from the three FOPH FHIR
+NDJSON files, plus Windows `.exe` icon embedding via `winresource`
+in `build.rs`. Bump the patch (`v3.1.4`), minor (`v3.2.0`) or major
+(`v4.0.0`) segment depending on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,
