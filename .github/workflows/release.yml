@@ -143,6 +143,48 @@ jobs:
           fi
           cp README.md LICENSE dist/${{ steps.vars.outputs.stem }}/
 
+      # Linux desktop integration — ship the .desktop file, the icon
+      # and a tiny installer.  No-op on macOS/Windows.
+      - name: stage Linux desktop integration
+        if: matrix.gui == true && startsWith(matrix.target, 'x86_64-unknown-linux')
+        shell: bash
+        run: |
+          cp assets/rust2xml-gui.desktop dist/${{ steps.vars.outputs.stem }}/
+          cp assets/icon.png             dist/${{ steps.vars.outputs.stem }}/
+          cp assets/install-linux.sh     dist/${{ steps.vars.outputs.stem }}/
+          chmod +x                       dist/${{ steps.vars.outputs.stem }}/install-linux.sh
+
+      # macOS .app bundle — wraps the GUI binary so Finder / Dock /
+      # Spotlight pick up the icon and bundle metadata.  Generates the
+      # .icns from the source PNG via the native iconutil tool.
+      - name: build macOS .app bundle
+        if: matrix.gui == true && contains(matrix.target, 'apple-darwin')
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.vars.outputs.tag }}"
+          version="${version#v}"
+          stem="${{ steps.vars.outputs.stem }}"
+          app="dist/${stem}/rust2xml-gui.app"
+          mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources"
+
+          # Build the .icns from assets/icon.png.
+          tmp_iconset="$(mktemp -d)/icon.iconset"
+          mkdir -p "$tmp_iconset"
+          for size in 16 32 64 128 256 512; do
+            sips -z "$size" "$size" assets/icon.png --out "$tmp_iconset/icon_${size}x${size}.png" >/dev/null
+            dbl=$((size * 2))
+            sips -z "$dbl" "$dbl" assets/icon.png --out "$tmp_iconset/icon_${size}x${size}@2x.png" >/dev/null
+          done
+          iconutil -c icns "$tmp_iconset" -o "${app}/Contents/Resources/icon.icns"
+
+          # Move the GUI binary into the .app and substitute the version
+          # in the Info.plist template.
+          mv "dist/${stem}/rust2xml-gui" "${app}/Contents/MacOS/rust2xml-gui"
+          sed "s/__VERSION__/${version}/g" assets/Info.plist.template \
+            > "${app}/Contents/Info.plist"
+          chmod +x "${app}/Contents/MacOS/rust2xml-gui"
+
       - name: pack tar.gz
         if: matrix.archive == 'tar.gz'
         shell: bash

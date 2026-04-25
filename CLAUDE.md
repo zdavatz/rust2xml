@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 54 unit tests + 1 integration test pass.
 
-Current released version: **v3.1.3** (trilingual limitations — `DSCRD`/`DSCRF`/`DSCIT` columns merged from `foph-sl-export-latest-de/fr/it.ndjson`; FhirExtractor now language-aware via `new_with_lang`; new `merge_translations` helper joins translation bundles into the primary DE map by EAN-13 + per-package limitation index. Windows `.exe` icon embedding via `build.rs` + `winresource` (target-conditional, no-op on Linux/macOS); pre-generated multi-resolution `assets/icon.ico` regeneratable via `cargo run --example make_ico`).
+Current released version: **v3.1.4** (release archives now ship a proper macOS `rust2xml-gui.app` bundle with `.icns` icon, generated via `sips` + `iconutil` in the workflow; Linux archives ship `rust2xml-gui.desktop` + `icon.png` + `install-linux.sh` helper; GUI top panel deduplicated — no more in-app "rust2xml 3.1.x" duplicate of the window title — and a clickable app-icon badge in the top-right opens `mailto:zdavatz@ywesee.com`).
 
 When bumping the version, keep `Cargo.toml` and `src/version.rs` in sync — they are checked independently and a mismatch will show up in `rust2xml --version`.
 

@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.3**.
+Ruby gem, written in Rust. Current version: **v3.1.4**.
 
 ## Parity with oddb2xml -e
 
@@ -222,6 +222,18 @@ Apple Silicon)** and **Windows (x86_64)** are attached to every GitHub
 Release. Each archive contains `rust2xml`, `compare_v5`,
 `check_artikelstamm`, README and LICENSE, plus a `.sha256` file.
 
+**macOS archives** ship a proper `rust2xml-gui.app` bundle (with
+embedded `.icns`) — drag it into `/Applications` and launch from
+Finder/Spotlight.
+
+**Linux archives** ship `rust2xml-gui.desktop`, `icon.png` and an
+`install-linux.sh` helper.  Run `./install-linux.sh` after unpacking
+to drop the binaries into `~/.local/bin` and register the launcher
+with your desktop environment.
+
+**Windows archives** carry the icon embedded directly in
+`rust2xml-gui.exe` so Explorer / Start menu show it on disk.
+
 ### Cutting a release
 
 Bump `version` in `Cargo.toml` **and** the `VERSION` constant in
@@ -230,15 +242,16 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.3
-git push origin v3.1.3
+git tag v3.1.4
+git push origin v3.1.4
 ```
 
-The current released version is **v3.1.3** — trilingual limitation
-descriptions (DSCRD / DSCRF / DSCIT) merged from the three FOPH FHIR
-NDJSON files, plus Windows `.exe` icon embedding via `winresource`
-in `build.rs`. Bump the patch (`v3.1.4`), minor (`v3.2.0`) or major
-(`v4.0.0`) segment depending on the nature of the change.
+The current released version is **v3.1.4** — release archives now
+ship a proper macOS `rust2xml-gui.app` bundle (with `.icns` icon
+generated via `sips` + `iconutil`) and a Linux `.desktop` launcher
++ icon + installer script. Bump the patch (`v3.1.5`), minor
+(`v3.2.0`) or major (`v4.0.0`) segment depending on the nature of
+the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,

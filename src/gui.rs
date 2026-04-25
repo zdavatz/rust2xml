@@ -68,6 +68,10 @@ struct TableData {
     rows: Vec<Vec<String>>,
 }
 
+/// Embedded icon PNG used both for the window header and for the
+/// clickable mail-link badge in the top-right of the controls panel.
+const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
+
 pub struct GuiApp {
     rx: Option<Receiver<Event>>,
     running_mode: Option<RunMode>,
@@ -79,6 +83,7 @@ pub struct GuiApp {
     selected_table: Option<String>,
     table_cache: Option<TableData>,
     last_error: Option<String>,
+    icon_texture: Option<egui::TextureHandle>,
 }
 
 impl Default for GuiApp {
@@ -94,7 +99,31 @@ impl Default for GuiApp {
             selected_table: None,
             table_cache: None,
             last_error: None,
+            icon_texture: None,
         }
+    }
+}
+
+impl GuiApp {
+    /// Lazily decode the embedded icon into an egui texture on the
+    /// first frame.  Cached for subsequent frames.
+    fn ensure_icon_texture(&mut self, ctx: &egui::Context) {
+        if self.icon_texture.is_some() {
+            return;
+        }
+        let img = match image::load_from_memory(ICON_PNG) {
+            Ok(i) => i,
+            Err(_) => return,
+        };
+        let resized = img.resize_exact(64, 64, image::imageops::FilterType::Lanczos3);
+        let rgba = resized.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        let color_image = egui::ColorImage::from_rgba_unmultiplied(
+            [w as usize, h as usize],
+            rgba.as_raw(),
+        );
+        let texture = ctx.load_texture("app-icon", color_image, egui::TextureOptions::LINEAR);
+        self.icon_texture = Some(texture);
     }
 }
 
@@ -329,13 +358,10 @@ impl eframe::App for GuiApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }
 
+        self.ensure_icon_texture(ctx);
+
         egui::TopBottomPanel::top("controls").show(ctx, |ui| {
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.heading("rust2xml");
-                ui.label(crate::version::VERSION);
-            });
-            ui.add_space(4.0);
             ui.horizontal(|ui| {
                 let running = self.running_mode.is_some();
                 if ui
@@ -359,6 +385,27 @@ impl eframe::App for GuiApp {
                         self.running_mode.unwrap().label()
                     ));
                 }
+
+                // Top-right: clickable app icon → mailto link.  The
+                // right-to-left layout pushes the badge to the trailing
+                // edge of the row regardless of window width.
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some(tex) = &self.icon_texture {
+                        let resp = ui
+                            .add(
+                                egui::Image::new(tex)
+                                    .max_width(40.0)
+                                    .max_height(40.0)
+                                    .sense(egui::Sense::click()),
+                            )
+                            .on_hover_text("Contact: zdavatz@ywesee.com");
+                        if resp.clicked() {
+                            ctx.open_url(egui::OpenUrl::new_tab(
+                                "mailto:zdavatz@ywesee.com",
+                            ));
+                        }
+                    }
+                });
             });
             if running_or_progressed(self.running_mode.is_some(), self.progress) {
                 ui.add_space(4.0);

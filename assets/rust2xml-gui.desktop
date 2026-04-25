@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=rust2xml
+GenericName=Swiss drug database GUI
+Comment=Browse Swiss drug data (BAG/FOPH FHIR) in a SQLite-backed table viewer
+Exec=rust2xml-gui
+Icon=rust2xml-gui
+Terminal=false
+Categories=Office;Database;Science;
+Keywords=pharmaceutical;drug;ePL;swissmedic;bag;
+StartupWMClass=rust2xml-gui
