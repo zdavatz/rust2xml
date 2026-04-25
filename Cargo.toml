@@ -1,6 +1,6 @@
 [package]
 name = "rust2xml"
-version = "3.1.1"
+version = "3.1.2"
 edition = "2021"
 rust-version = "1.75"
 description = "Swiss drug database XML/DAT generator — creates files from swissINDEX, BAG-XML/FHIR and Swissmedic"

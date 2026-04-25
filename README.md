@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.1**.
+Ruby gem, written in Rust. Current version: **v3.1.2**.
 
 ## Parity with oddb2xml -e
 
@@ -224,15 +224,18 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.1
-git push origin v3.1.1
+git tag v3.1.2
+git push origin v3.1.2
 ```
 
-The current released version is **v3.1.1** — GUI now defaults to
-the FOPH FHIR NDJSON feed, extracts SL prices + limitations, and
-ships with a custom window icon. Bump the patch (`v3.1.2`), minor
-(`v3.2.0`) or major (`v4.0.0`) segment depending on the nature of
-the change.
+The current released version is **v3.1.2** — limitations table now
+populates correctly under FHIR mode (lenient `type` deserialiser to
+handle the Bundle vs RegulatedAuthorization shape mismatch);
+limitations are now keyed at the package level
+(`SwissmedicNo8` + `GTIN` columns) with their description text in the
+dedup key so distinct entries don't collapse. Bump the patch
+(`v3.1.3`), minor (`v3.2.0`) or major (`v4.0.0`) segment depending
+on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,

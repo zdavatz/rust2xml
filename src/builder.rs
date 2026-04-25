@@ -168,25 +168,31 @@ impl Builder {
         self.build("LIMITATION", "LIM", &self.limitation_records(), &self.inputs.release_date)
     }
 
-    /// Records for `oddb_limitation.xml`.
+    /// Records for `oddb_limitation.xml`.  Keyed at the package level
+    /// (Swissmedic-No8) — a limitation applies to a specific Packung,
+    /// not to the whole preparation.  The dedup key includes the
+    /// description text so distinct limitations don't collapse when
+    /// the FHIR feed leaves the categorical fields blank.
     pub fn limitation_records(&self) -> Vec<Vec<Node>> {
-        let mut seen: std::collections::HashSet<(String, String, String, String)> =
+        let mut seen: std::collections::HashSet<(String, String, String, String, String)> =
             std::collections::HashSet::new();
         let mut nodes: Vec<Vec<Node>> = Vec::new();
         for item in self.inputs.bag.values() {
             for pkg in item.packages.values() {
                 for lim in &pkg.limitations {
                     let key = (
-                        item.swissmedic_number5.clone(),
+                        pkg.swissmedic_number8.clone(),
                         lim.code.clone(),
                         lim.r#type.clone(),
                         lim.value.clone(),
+                        lim.desc_de.clone(),
                     );
                     if !seen.insert(key) {
                         continue;
                     }
                     nodes.push(vec![
-                        Node::leaf("SwissmedicNo5", item.swissmedic_number5.clone()),
+                        Node::leaf("SwissmedicNo8", pkg.swissmedic_number8.clone()),
+                        Node::leaf("GTIN", pkg.ean13.clone()),
                         Node::leaf("IT", lim.it.clone()),
                         Node::leaf("LIMTYP", lim.r#type.clone()),
                         Node::leaf("LIMVAL", lim.value.clone()),

@@ -32,6 +32,12 @@ pub struct FhirResource {
     pub classification: Vec<FhirCodeableConcept>,
     #[serde(rename = "productClassification")]
     pub product_classification: Vec<FhirCodeableConcept>,
+    /// RegulatedAuthorization.type — a CodeableConcept used to detect
+    /// Marketing Auth.  In Bundle resources the same field name carries
+    /// a plain string (e.g. `"collection"`), so we deserialize
+    /// leniently and skip values that aren't a struct.
+    #[serde(rename = "type", default, deserialize_with = "deserialize_codeable_concept_lenient")]
+    pub type_field: Option<FhirCodeableConcept>,
     pub ingredient: Vec<FhirIngredient>,
     #[serde(rename = "packagedMedicinalProduct")]
     pub packaged_medicinal_product: Vec<FhirPackagedMedicinalProduct>,
@@ -306,6 +312,10 @@ impl FhirExtractor {
         // Per-package prices + limitations parsed out of
         // RegulatedAuthorization.  Keyed by PackagedProductDefinition id.
         let mut sl_data: HashMap<String, (BagPrices, Vec<BagLimitation>)> = HashMap::new();
+        // PackagedProductDefinition id → SwissmedicNo8.  Sourced from
+        // the Marketing Authorisation RA's `identifier[0].value`,
+        // following the same logic as oddb.org's `bsv_fhir.rb`.
+        let mut no8_for_pack: HashMap<String, String> = HashMap::new();
 
         for (lineno, line) in self.ndjson.lines().enumerate() {
             if line.trim().is_empty() {
@@ -364,6 +374,27 @@ impl FhirExtractor {
                                     None
                                 }
                             });
+                        // Marketing-auth RA → identifier[0].value is the
+                        // SwissmedicNo8 for the pack it targets.
+                        let is_marketing_auth = res
+                            .type_field
+                            .as_ref()
+                            .map(|t| {
+                                t.coding.iter().any(|c| {
+                                    c.code.as_deref() == Some("756000002001")
+                                })
+                            })
+                            .unwrap_or(false);
+                        if let (true, Some(pack_id)) = (is_marketing_auth, target_pack.clone()) {
+                            if let Some(no8) = res
+                                .identifier
+                                .first()
+                                .and_then(|id| id.value.clone())
+                                .filter(|v| !v.is_empty())
+                            {
+                                no8_for_pack.insert(pack_id, no8);
+                            }
+                        }
                         if let Some(pack_id) = target_pack {
                             let mut all_extensions = res.extension.clone();
                             for ind in &res.indication {
@@ -568,12 +599,28 @@ impl FhirExtractor {
                     .unwrap_or_default();
             }
 
-            let no8 = pack
-                .identifier
-                .iter()
-                .find(|id| id.system.as_deref() == Some("urn:oid:2.51.1.1"))
-                .and_then(|id| id.value.clone())
-                .unwrap_or_default();
+            // Preferred path: the Marketing Authorisation RA carries
+            // the SwissmedicNo8 in `identifier[0].value`.  Fall back to
+            // the (legacy) top-level pack identifier, then to deriving
+            // the No8 from the Swissmedic-prefixed EAN-13.
+            let pack_id_str = pack.id.clone().unwrap_or_default();
+            let no8 = no8_for_pack
+                .get(&pack_id_str)
+                .cloned()
+                .or_else(|| {
+                    pack.identifier
+                        .iter()
+                        .find(|id| id.system.as_deref() == Some("urn:oid:2.51.1.1"))
+                        .and_then(|id| id.value.clone())
+                        .filter(|v| !v.is_empty())
+                })
+                .unwrap_or_else(|| {
+                    if ean13.starts_with("7680") && ean13.len() == 13 {
+                        ean13[4..12].to_string()
+                    } else {
+                        String::new()
+                    }
+                });
 
             util::set_ean13_for_no8(no8.clone(), ean13.clone());
 
@@ -604,6 +651,24 @@ impl FhirExtractor {
         }
 
         Ok(out)
+    }
+}
+
+/// Accept either a `FhirCodeableConcept` object or any other JSON
+/// value (string, array, …) — used for the `type` field which is
+/// shared between Bundle (string) and RegulatedAuthorization
+/// (CodeableConcept) resources.  Non-objects yield `None`.
+fn deserialize_codeable_concept_lenient<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<FhirCodeableConcept>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value.is_object() {
+        Ok(serde_json::from_value(value).ok())
+    } else {
+        Ok(None)
     }
 }
 

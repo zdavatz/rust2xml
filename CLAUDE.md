@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 54 unit tests + 1 integration test pass.
 
-Current released version: **v3.1.1** (GUI defaults to FOPH FHIR NDJSON feed; extracts SL prices + limitations from package-level RegulatedAuthorization; nested ARTBAR/ARTPRI flatten into discriminator-suffixed columns; embedded window icon; per-job progress bar).
+Current released version: **v3.1.2** (FHIR pipeline: lenient `type` deserializer fixes "FHIR NDJSON parse line 1" crash from Bundle vs RegulatedAuthorization shape mismatch; limitations now keyed by `SwissmedicNo8` + `GTIN` instead of `SwissmedicNo5`; description text added to dedup key so 4210 distinct FHIR limitations no longer collapse to 1; SwissmedicNo8 sourced from Marketing Authorisation RA `identifier[0].value` per oddb.org's `bsv_fhir.rb` convention).
 
 When bumping the version, keep `Cargo.toml` and `src/version.rs` in sync — they are checked independently and a mismatch will show up in `rust2xml --version`.
 
