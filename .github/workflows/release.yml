@@ -39,6 +39,10 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: install GUI build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libfontconfig1-dev libgl1-mesa-dev
       - name: cargo test --all
         run: cargo test --all --release
 
@@ -55,23 +59,28 @@ jobs:
             os: ubuntu-latest
             archive: tar.gz
             binary-suffix: ""
+            gui: true
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             archive: tar.gz
             binary-suffix: ""
             cross: true
+            gui: false  # eframe cross-build needs an arm64 sysroot — not worth the complexity for v1
           - target: x86_64-apple-darwin
             os: macos-13
             archive: tar.gz
             binary-suffix: ""
+            gui: true
           - target: aarch64-apple-darwin
             os: macos-latest
             archive: tar.gz
             binary-suffix: ""
+            gui: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
             binary-suffix: ".exe"
+            gui: true
     steps:
       - uses: actions/checkout@v4
 
@@ -95,7 +104,19 @@ jobs:
           linker = "aarch64-linux-gnu-gcc"
           EOF
 
-      - name: cargo build --release
+      # eframe needs xkbcommon + fontconfig headers on Linux x86_64.
+      - name: install Linux GUI build deps
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libfontconfig1-dev libgl1-mesa-dev
+
+      - name: cargo build --release (CLI bins only)
+        if: matrix.gui != true
+        run: cargo build --release --target ${{ matrix.target }} --bin rust2xml --bin compare_v5 --bin check_artikelstamm
+
+      - name: cargo build --release (CLI + GUI)
+        if: matrix.gui == true
         run: cargo build --release --target ${{ matrix.target }} --bins
 
       - name: resolve tag / version
@@ -117,6 +138,9 @@ jobs:
           cp "target/${{ matrix.target }}/release/rust2xml${{ matrix.binary-suffix }}" dist/${{ steps.vars.outputs.stem }}/
           cp "target/${{ matrix.target }}/release/compare_v5${{ matrix.binary-suffix }}" dist/${{ steps.vars.outputs.stem }}/
           cp "target/${{ matrix.target }}/release/check_artikelstamm${{ matrix.binary-suffix }}" dist/${{ steps.vars.outputs.stem }}/
+          if [ "${{ matrix.gui }}" = "true" ]; then
+            cp "target/${{ matrix.target }}/release/rust2xml-gui${{ matrix.binary-suffix }}" dist/${{ steps.vars.outputs.stem }}/
+          fi
           cp README.md LICENSE dist/${{ steps.vars.outputs.stem }}/
 
       - name: pack tar.gz

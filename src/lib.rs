@@ -17,10 +17,12 @@ pub mod downloader;
 pub mod extractor;
 pub mod fhir_support;
 pub mod foph_sl_downloader;
+pub mod gui;
 pub mod options;
 pub mod parslet_compositions;
 pub mod refdata_cleanup;
 pub mod semantic_check;
+pub mod sqlite_export;
 pub mod util;
 pub mod xml_definitions;
 

@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.0.7**.
+Ruby gem, written in Rust. Current version: **v3.1.0**.
 
 ## Parity with oddb2xml -e
 
@@ -47,9 +47,11 @@ Schema shapes match Ruby where it matters:
 cargo build --release
 ```
 
-Three binaries land in `target/release/`:
+Four binaries land in `target/release/`:
 
 - `rust2xml` — main CLI.
+- `rust2xml-gui` — desktop UI (Linux / macOS / Windows) with `-e` /
+  `-b` buttons and a SQLite-backed table viewer (see *Desktop UI* below).
 - `compare_v5` — diff two Artikelstamm-style XML files.
 - `check_artikelstamm` — validate unique PRODNO/GTIN in an output XML.
 
@@ -71,6 +73,31 @@ Three binaries land in `target/release/`:
 # Cache downloads — re-uses files already under ./downloads/
 ./target/release/rust2xml -e --skip-download --log
 ```
+
+## Desktop UI (`rust2xml-gui`)
+
+Cross-platform egui app. Two big buttons drive the same pipeline as
+the CLI but write the result into a single SQLite database instead of
+seven XML files:
+
+```sh
+./target/release/rust2xml-gui
+```
+
+- `Run -e (Extended)` and `Run -b (Firstbase)` start the
+  download/extract pipeline in a worker thread (UI stays responsive,
+  log streams live).
+- Output lands at `sqlite/rust2xml_<flag>_HHMM_DD.MM.YYYY.sqlite`
+  relative to the working directory (e.g. `sqlite/rust2xml_e_1430_25.04.2026.sqlite`).
+- After the run, eight tabs (`articles`, `calc`, `codes`,
+  `interactions`, `limitations`, `meta`, `products`, `substances`)
+  let you browse the data — every column is shown, columns are
+  resizable, the table scrolls horizontally for wide records.
+- Nested fields (`<ARTBAR>` and the four `<ARTPRI>` siblings inside
+  `<ART>`) are JSON-encoded into a single column so no data is lost.
+
+The SQLite file is plain — open it with `sqlite3`, DBeaver, etc.
+Each run creates a fresh timestamped file; old runs stay on disk.
 
 ## Generated files (XML mode)
 
@@ -127,7 +154,7 @@ Implied-flag cascade (same behaviour as Ruby):
 cargo test              # unit + integration
 ```
 
-52 unit tests + 1 integration test:
+54 unit tests + 1 integration test:
 
 - 23 option-parity tests (one per Ruby flag + every implied-flag
   cascade rule).
@@ -184,14 +211,14 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.0.7
-git push origin v3.0.7
+git tag v3.1.0
+git push origin v3.1.0
 ```
 
-The current released version is **v3.0.7** — parallel XML output
-build (~30 % faster output phase). Bump the patch (`v3.0.8`),
-minor (`v3.1.0`) or major (`v4.0.0`) segment depending on the
-nature of the change.
+The current released version is **v3.1.0** — desktop UI binary
+(`rust2xml-gui`) with SQLite-backed data viewer. Bump the patch
+(`v3.1.1`), minor (`v3.2.0`) or major (`v4.0.0`) segment depending
+on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,

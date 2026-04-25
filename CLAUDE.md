@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 51 unit tests + 1 integration test pass.
+Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 54 unit tests + 1 integration test pass.
 
-Current released version: **v3.0.7** (parallel XML output build — ~30 % faster output phase via `rayon::par_iter` over the seven `Builder::build_*` methods).
+Current released version: **v3.1.0** (desktop UI binary `rust2xml-gui` with SQLite-backed data viewer; CLI features unchanged).
 
 When bumping the version, keep `Cargo.toml` and `src/version.rs` in sync — they are checked independently and a mismatch will show up in `rust2xml --version`.
 
@@ -43,6 +43,7 @@ cargo run --bin rust2xml -- --help
 
 Binaries:
 - `rust2xml` — main CLI.
+- `rust2xml-gui` — egui desktop UI; two big buttons for `-e` / `-b` runs, output written to `sqlite/rust2xml_<flag>_HHMM_DD.MM.YYYY.sqlite`, eight tabs query the resulting DB and render every column (horizontal scroll via `egui_extras::TableBuilder`).
 - `compare_v5` — diff two Artikelstamm XML files.
 - `check_artikelstamm` — run semantic checks on output XML.
 
@@ -71,7 +72,9 @@ name belongs to the Ruby project.
 | `lib/oddb2xml/chapter_70_hack.rb` | `chapter_70_hack` | HTML table scrape producing synthetic GTINs (`FAKE_GTIN_START + pharmacode`). |
 | `lib/oddb2xml/semantic_check.rb` | `semantic_check` | `every_product_number_is_unique` + `every_item_number_is_unique` over generated XML. |
 | `lib/oddb2xml/builder.rb` | `builder` | 7 XML output shapes (`product`, `article`, `substance`, `limitation`, `interaction`, `code`, `calc`) + `.dat`. Uses an internal `Node` enum so emitters can produce nested children (needed for `<ART>`'s `<ARTBAR>`/`<ARTPRI>`). Each top-level child carries a `SHA256` attribute over the hex digest of its joined descendant text. |
-| `lib/oddb2xml/cli.rb` | `cli` + `src/bin/rust2xml.rs` | Parallel download+extract **and** parallel XML build via rayon (`Vec<(name, fn(&Builder) -> Result<String>)>` driven by `par_iter`). FHIR-first path is the default when `--fhir` or `--fhir-url` is set; legacy BAG XML otherwise. Union of BAG + Refdata pharma + Refdata non-pharma + ZurRose + Firstbase feeds all articles. |
+| `lib/oddb2xml/cli.rb` | `cli` + `src/bin/rust2xml.rs` | Parallel download+extract **and** parallel XML build via rayon (`Vec<(name, fn(&Builder) -> Result<String>)>` driven by `par_iter`). FHIR-first path is the default when `--fhir` or `--fhir-url` is set; legacy BAG XML otherwise. Union of BAG + Refdata pharma + Refdata non-pharma + ZurRose + Firstbase feeds all articles. `Cli::run_to_sqlite` is the same pipeline but writes a SQLite DB instead of seven XMLs (used by `rust2xml-gui`). |
+| — (new) | `sqlite_export` | Walks `Builder::*_records()` (one method per output kind), unions column names per record, creates one TEXT-typed table per kind in SQLite. Nested children (`<ARTBAR>`, repeated `<ARTPRI>`) are JSON-encoded into a single column. Filename helper `timestamped_filename(flag, now) → rust2xml_e_HHMM_DD.MM.YYYY.sqlite`. |
+| — (new) | `gui` + `src/bin/rust2xml-gui.rs` | egui desktop UI. `GuiApp` owns a `crossbeam-channel` for log events and an optional `Connection` to the most recent SQLite DB. Worker thread runs `Cli::run_to_sqlite`, UI polls events on each frame via `request_repaint_after`. Tabs are produced from `sqlite_master` enumeration; selected tab is loaded into a `Vec<Vec<String>>` cache and rendered with `egui_extras::TableBuilder` inside a horizontal `ScrollArea`. |
 | `lib/oddb2xml/compare.rb` | `compare` + `src/bin/compare_v5.rs` | GTIN-keyed diff of two output XMLs. |
 
 ## Hard-problem mapping
@@ -101,7 +104,7 @@ name belongs to the Ruby project.
   `Elexis_Artikelstamm_v5.xsd`-compliant output shape is not yet
   produced.
 - **RSpec port.** 16 spec files / ~6,500 lines of RSpec. Currently
-  52 unit + 1 integration Rust tests cover the architectural pieces;
+  54 unit + 1 integration Rust tests cover the architectural pieces;
   per-file RSpec parity is not yet complete.
 - **`oddb_calc.xml` content density still trails Ruby** (12 MB vs
   41 MB). Record count is in the right ballpark; the gap is in
@@ -131,8 +134,9 @@ produces archives for:
 - `aarch64-apple-darwin` (native on `macos-latest`)
 - `x86_64-pc-windows-msvc`
 
-Each archive bundles `rust2xml`, `compare_v5`, `check_artikelstamm`,
-`README.md`, `LICENSE` and ships with a `.sha256` sidecar.  The
+Each archive bundles `rust2xml`, `rust2xml-gui`, `compare_v5`,
+`check_artikelstamm`, `README.md`, `LICENSE` and ships with a
+`.sha256` sidecar.  The
 workflow uploads everything to a GitHub Release with auto-generated
 notes.  Bumping the patch version is the normal release cadence:
 edit `Cargo.toml` version → commit → `git tag vX.Y.Z` → `git push

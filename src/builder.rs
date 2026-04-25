@@ -108,8 +108,7 @@ impl Builder {
 
     /// `oddb_product.xml`.
     pub fn build_product(&self) -> Result<String> {
-        let records: Vec<Vec<Node>> = self.product_nodes().into_iter().map(flat).collect();
-        self.build("PRODUCT", "PRD", &records, &self.inputs.release_date)
+        self.build("PRODUCT", "PRD", &self.product_records(), &self.inputs.release_date)
     }
 
     /// `oddb_article.xml` — emits Ruby's nested schema with
@@ -123,8 +122,23 @@ impl Builder {
         )
     }
 
+    /// Records for `oddb_product.xml` as Node trees.
+    pub fn product_records(&self) -> Vec<Vec<Node>> {
+        self.product_nodes().into_iter().map(flat).collect()
+    }
+
+    /// Records for `oddb_article.xml` as Node trees (with nested ARTBAR/ARTPRI).
+    pub fn article_records(&self) -> Vec<Vec<Node>> {
+        self.article_nodes()
+    }
+
     /// `oddb_substance.xml`.
     pub fn build_substance(&self) -> Result<String> {
+        self.build("SUBSTANCE", "SB", &self.substance_records(), &self.inputs.release_date)
+    }
+
+    /// Records for `oddb_substance.xml`.
+    pub fn substance_records(&self) -> Vec<Vec<Node>> {
         let mut seen = std::collections::HashSet::new();
         let mut records: Vec<Vec<Node>> = Vec::new();
         let mut id: i64 = 0;
@@ -143,7 +157,7 @@ impl Builder {
                 ]);
             }
         }
-        self.build("SUBSTANCE", "SB", &records, &self.inputs.release_date)
+        records
     }
 
     /// `oddb_limitation.xml`.  Emits Ruby's LIM schema:
@@ -151,6 +165,11 @@ impl Builder {
     /// `<LIMNIV>`, `<DSCRD>`, `<DSCRF>`, `<VDAT>`.  Deduplicated by
     /// (SwissmedicNo5, LIMNAMEBAG, LIMTYP, LIMVAL).
     pub fn build_limitation(&self) -> Result<String> {
+        self.build("LIMITATION", "LIM", &self.limitation_records(), &self.inputs.release_date)
+    }
+
+    /// Records for `oddb_limitation.xml`.
+    pub fn limitation_records(&self) -> Vec<Vec<Node>> {
         let mut seen: std::collections::HashSet<(String, String, String, String)> =
             std::collections::HashSet::new();
         let mut nodes: Vec<Vec<Node>> = Vec::new();
@@ -180,18 +199,17 @@ impl Builder {
                 }
             }
         }
-        self.build(
-            "LIMITATION",
-            "LIM",
-            &nodes,
-            &self.inputs.release_date,
-        )
+        nodes
     }
 
     /// `oddb_interaction.xml`.
     pub fn build_interaction(&self) -> Result<String> {
-        let nodes: Vec<Vec<Node>> = self
-            .inputs
+        self.build("INTERACTION", "IX", &self.interaction_records(), &self.inputs.release_date)
+    }
+
+    /// Records for `oddb_interaction.xml`.
+    pub fn interaction_records(&self) -> Vec<Vec<Node>> {
+        self.inputs
             .epha_interactions
             .iter()
             .map(|i| {
@@ -206,13 +224,17 @@ impl Builder {
                     Node::leaf("GRAD", i.grad.clone()),
                 ]
             })
-            .collect();
-        self.build("INTERACTION", "IX", &nodes, &self.inputs.release_date)
+            .collect()
     }
 
     /// `oddb_code.xml` — static catalog of status codes.  Matches
     /// the Ruby builder's hard-coded list.
     pub fn build_code(&self) -> Result<String> {
+        self.build("CODE", "CD", &self.code_records(), &self.inputs.release_date)
+    }
+
+    /// Records for `oddb_code.xml`.
+    pub fn code_records(&self) -> Vec<Vec<Node>> {
         let mk = |val: &str, dscr: &str| -> Vec<Node> {
             vec![
                 Node::leaf("CDTYP", "11"),
@@ -221,20 +243,24 @@ impl Builder {
                 Node::leaf("DEL", "false"),
             ]
         };
-        let nodes: Vec<Vec<Node>> = vec![
+        vec![
             mk("X", "Kontraindiziert"),
             mk("O", "Nur in Ausnahmefällen"),
             mk("R", "Strenge Indikationsstellung"),
             mk("V", "Vorsichtsmassnahmen"),
             mk("U", "Unbedenklich"),
-        ];
-        self.build("CODE", "CD", &nodes, &self.inputs.release_date)
+        ]
     }
 
     /// `oddb_calc.xml` — galenic calculations.  One CAL per article:
     /// GTIN + names + ATC + IT + pack size & unit + galenic form &
     /// group (looked up via `calc::group_by_form`) + OID + composition.
     pub fn build_calc(&self) -> Result<String> {
+        self.build("CALC", "CAL", &self.calc_records(), &self.inputs.release_date)
+    }
+
+    /// Records for `oddb_calc.xml`.
+    pub fn calc_records(&self) -> Vec<Vec<Node>> {
         let mut nodes: Vec<Vec<Node>> = Vec::new();
         let mut emitted: std::collections::HashSet<String> =
             std::collections::HashSet::new();
@@ -297,7 +323,7 @@ impl Builder {
             ]);
         }
 
-        self.build("CALC", "CAL", &nodes, &self.inputs.release_date)
+        nodes
     }
 
     /// Emit the legacy `oddb.dat` / IGM-11 transfer.dat — one fixed-width

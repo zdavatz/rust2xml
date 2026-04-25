@@ -32,6 +32,26 @@ impl Cli {
         Self { opts }
     }
 
+    /// Run the same download/extract pipeline as `run()`, but write
+    /// the result into a SQLite database at `sqlite_path` instead of
+    /// emitting XML files.  Used by the GUI binary.
+    pub fn run_to_sqlite(self, sqlite_path: &std::path::Path) -> Result<()> {
+        util::save_options(util::GlobalOptions {
+            skip_download: self.opts.skip_download,
+            log: self.opts.log,
+            work_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            downloads_dir: std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("downloads"),
+        });
+        let _ = fs::create_dir_all(util::downloads_dir());
+
+        let inputs = self.collect_inputs()?;
+        let b = Builder::new(self.opts.clone(), inputs);
+        crate::sqlite_export::write_sqlite(&b, sqlite_path)?;
+        Ok(())
+    }
+
     pub fn run(self) -> Result<Vec<PathBuf>> {
         // Push options into the global holder so util::log / skip_download
         // work exactly as their Ruby counterparts.
