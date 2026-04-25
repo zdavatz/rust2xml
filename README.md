@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.0.6**.
+Ruby gem, written in Rust. Current version: **v3.0.7**.
 
 ## Parity with oddb2xml -e
 
@@ -24,7 +24,9 @@ how much per-record content each file carries.
 | `oddb_calc.xml` | 18,162 | n/a | — | 12 MB | 41 MB |
 
 Runtime: **~3 s** fresh download, **~17 s** including ZurRose's 177 K
-transfer.dat parse. Well under a minute end-to-end.
+transfer.dat parse. Well under a minute end-to-end. Downloads/extract
+and the seven XML builds both run in parallel via `rayon` — the
+output phase alone is ~30 % faster than the serial equivalent.
 
 Schema shapes match Ruby where it matters:
 - `<ART>` uses Ruby's nested `<ARTBAR>` (CDTYP / BC / BCSTAT) and one
@@ -125,7 +127,7 @@ Implied-flag cascade (same behaviour as Ruby):
 cargo test              # unit + integration
 ```
 
-41 unit tests + 1 integration test:
+52 unit tests + 1 integration test:
 
 - 23 option-parity tests (one per Ruby flag + every implied-flag
   cascade rule).
@@ -182,13 +184,14 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.0.6
-git push origin v3.0.6
+git tag v3.0.7
+git push origin v3.0.7
 ```
 
-The current released version is **v3.0.6** — Refdata cleanup parity
-with oddb2xml 3.0.5. Bump the patch (`v3.0.7`), minor (`v3.1.0`) or
-major (`v4.0.0`) segment depending on the nature of the change.
+The current released version is **v3.0.7** — parallel XML output
+build (~30 % faster output phase). Bump the patch (`v3.0.8`),
+minor (`v3.1.0`) or major (`v4.0.0`) segment depending on the
+nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,

@@ -52,26 +52,29 @@ impl Cli {
 
         match self.opts.format {
             Format::Xml => {
-                let jobs: Vec<(&str, Box<dyn Fn() -> Result<String> + Send + Sync>)> = vec![
-                    ("oddb_product.xml", Box::new(|| b.build_product().map_err(Into::into))),
-                    ("oddb_article.xml", Box::new(|| b.build_article().map_err(Into::into))),
-                    ("oddb_substance.xml", Box::new(|| b.build_substance().map_err(Into::into))),
-                    ("oddb_limitation.xml", Box::new(|| b.build_limitation().map_err(Into::into))),
-                    ("oddb_interaction.xml", Box::new(|| b.build_interaction().map_err(Into::into))),
-                    ("oddb_code.xml", Box::new(|| b.build_code().map_err(Into::into))),
+                type BuildFn = fn(&Builder) -> Result<String>;
+                let mut jobs: Vec<(&str, BuildFn)> = vec![
+                    ("oddb_product.xml", Builder::build_product),
+                    ("oddb_article.xml", Builder::build_article),
+                    ("oddb_substance.xml", Builder::build_substance),
+                    ("oddb_limitation.xml", Builder::build_limitation),
+                    ("oddb_interaction.xml", Builder::build_interaction),
+                    ("oddb_code.xml", Builder::build_code),
                 ];
-                for (name, task) in jobs {
-                    let xml = task()?;
-                    let path = PathBuf::from(name);
-                    fs::write(&path, xml)
-                        .with_context(|| format!("writing {}", path.display()))?;
-                    outputs.push(path);
-                }
                 if self.opts.calc || self.opts.extended {
-                    let path = PathBuf::from("oddb_calc.xml");
-                    fs::write(&path, b.build_calc()?)?;
-                    outputs.push(path);
+                    jobs.push(("oddb_calc.xml", Builder::build_calc));
                 }
+                let built: Result<Vec<PathBuf>> = jobs
+                    .par_iter()
+                    .map(|(name, task)| {
+                        let xml = task(&b)?;
+                        let path = PathBuf::from(*name);
+                        fs::write(&path, xml)
+                            .with_context(|| format!("writing {}", path.display()))?;
+                        Ok(path)
+                    })
+                    .collect();
+                outputs.extend(built?);
             }
             Format::Dat => {
                 let path = PathBuf::from("oddb.dat");

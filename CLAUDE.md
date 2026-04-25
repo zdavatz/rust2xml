@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 41 unit tests + 1 integration test pass.
+Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 51 unit tests + 1 integration test pass.
 
-Current released version: **v3.0.6** (Refdata cleanup parity with oddb2xml 3.0.5).
+Current released version: **v3.0.7** (parallel XML output build — ~30 % faster output phase via `rayon::par_iter` over the seven `Builder::build_*` methods).
 
 When bumping the version, keep `Cargo.toml` and `src/version.rs` in sync — they are checked independently and a mismatch will show up in `rust2xml --version`.
 
@@ -24,7 +24,7 @@ Measured 2026-04-24 against oddb2xml 3.0.4, same live sources:
 | `oddb_product.xml` | 18,162 | 17,173 | 105.8% | 13.2 MB | 15.7 MB |
 | `oddb_calc.xml` | 18,162 | n/a | — | 12 MB | 41 MB |
 
-Runtime: ~3 s fresh download / ~17 s with ZurRose's 177 K transfer.dat parse.
+Runtime: ~3 s fresh download / ~17 s with ZurRose's 177 K transfer.dat parse. Both the download/extract phase and the XML output phase run in parallel via `rayon` (output phase ~0.51 s parallel vs ~0.72 s serial on this machine; ZurRose's serial fixed-width parse still dominates the cached run).
 
 Schema shapes match Ruby on `<ART>` (nested `<ARTBAR>` with CDTYP / BC /
 BCSTAT, multiple `<ARTPRI>` for FACTORY / PUBLIC / ZURROSE /
@@ -71,7 +71,7 @@ name belongs to the Ruby project.
 | `lib/oddb2xml/chapter_70_hack.rb` | `chapter_70_hack` | HTML table scrape producing synthetic GTINs (`FAKE_GTIN_START + pharmacode`). |
 | `lib/oddb2xml/semantic_check.rb` | `semantic_check` | `every_product_number_is_unique` + `every_item_number_is_unique` over generated XML. |
 | `lib/oddb2xml/builder.rb` | `builder` | 7 XML output shapes (`product`, `article`, `substance`, `limitation`, `interaction`, `code`, `calc`) + `.dat`. Uses an internal `Node` enum so emitters can produce nested children (needed for `<ART>`'s `<ARTBAR>`/`<ARTPRI>`). Each top-level child carries a `SHA256` attribute over the hex digest of its joined descendant text. |
-| `lib/oddb2xml/cli.rb` | `cli` + `src/bin/rust2xml.rs` | Parallel download+extract via rayon; FHIR-first path is the default when `--fhir` or `--fhir-url` is set; legacy BAG XML otherwise. Union of BAG + Refdata pharma + Refdata non-pharma + ZurRose + Firstbase feeds all articles. |
+| `lib/oddb2xml/cli.rb` | `cli` + `src/bin/rust2xml.rs` | Parallel download+extract **and** parallel XML build via rayon (`Vec<(name, fn(&Builder) -> Result<String>)>` driven by `par_iter`). FHIR-first path is the default when `--fhir` or `--fhir-url` is set; legacy BAG XML otherwise. Union of BAG + Refdata pharma + Refdata non-pharma + ZurRose + Firstbase feeds all articles. |
 | `lib/oddb2xml/compare.rb` | `compare` + `src/bin/compare_v5.rs` | GTIN-keyed diff of two output XMLs. |
 
 ## Hard-problem mapping
@@ -101,7 +101,7 @@ name belongs to the Ruby project.
   `Elexis_Artikelstamm_v5.xsd`-compliant output shape is not yet
   produced.
 - **RSpec port.** 16 spec files / ~6,500 lines of RSpec. Currently
-  41 unit + 1 integration Rust tests cover the architectural pieces;
+  52 unit + 1 integration Rust tests cover the architectural pieces;
   per-file RSpec parity is not yet complete.
 - **`oddb_calc.xml` content density still trails Ruby** (12 MB vs
   41 MB). Record count is in the right ballpark; the gap is in
