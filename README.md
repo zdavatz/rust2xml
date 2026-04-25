@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.0.5**.
+Ruby gem, written in Rust. Current version: **v3.0.6**.
 
 ## Parity with oddb2xml -e
 
@@ -141,6 +141,27 @@ cargo test              # unit + integration
 - Integration test that roundtrips a BAG XML fixture through extractor
   → builder and asserts the SHA256 / content plumbing.
 
+## Refdata data-quality compensation
+
+Refdata.Articles.xml ships with recurring data-quality issues that
+otherwise propagate into downstream output unchanged. rust2xml mirrors
+the cleanups added in oddb2xml 3.0.5 (see
+[issue #112](https://github.com/zdavatz/oddb2xml/issues/112)).
+
+Currently active (`src/refdata_cleanup.rs`):
+
+* **Doubled dose token** — when Refdata emits the strength twice in
+  `<FullName>` (e.g. `MIRTAZAPIN Sandoz eco 30 mg / 30 mg / 100 Tablette`)
+  and the matching Swissmedic entry shows a single active substance,
+  the duplicate token is collapsed to a single occurrence. Real
+  combination products like `PHESGO 600 mg / 600 mg / 10 ml`
+  (pertuzumab + trastuzumab) are detected via the comma in
+  `substance_swissmedic` and left untouched.
+
+The cleanup is wired into `Builder::new` and is idempotent — every
+rule is guarded by a Swissmedic-side heuristic so genuine data is
+never altered.
+
 ## Architecture
 
 See `CLAUDE.md` for the full 1:1 Ruby → Rust module mapping, the
@@ -165,9 +186,9 @@ git tag v3.0.6
 git push origin v3.0.6
 ```
 
-The current released version is **v3.0.5** — the first tag cut from
-the Rust port. Bump the patch (`v3.0.6`), minor (`v3.1.0`) or major
-(`v4.0.0`) segment depending on the nature of the change.
+The current released version is **v3.0.6** — Refdata cleanup parity
+with oddb2xml 3.0.5. Bump the patch (`v3.0.7`), minor (`v3.1.0`) or
+major (`v4.0.0`) segment depending on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,

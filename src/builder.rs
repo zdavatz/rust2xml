@@ -101,7 +101,8 @@ pub struct Builder {
 }
 
 impl Builder {
-    pub fn new(opts: Options, inputs: Inputs) -> Self {
+    pub fn new(opts: Options, mut inputs: Inputs) -> Self {
+        crate::refdata_cleanup::apply(&mut inputs);
         Self { opts, inputs }
     }
 

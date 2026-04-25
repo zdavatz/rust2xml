@@ -19,6 +19,7 @@ pub mod fhir_support;
 pub mod foph_sl_downloader;
 pub mod options;
 pub mod parslet_compositions;
+pub mod refdata_cleanup;
 pub mod semantic_check;
 pub mod util;
 pub mod xml_definitions;
