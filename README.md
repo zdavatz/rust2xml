@@ -173,7 +173,7 @@ Implied-flag cascade (same behaviour as Ruby):
 cargo test              # unit + integration
 ```
 
-54 unit tests + 1 integration test:
+58 unit tests + 1 integration test:
 
 - 23 option-parity tests (one per Ruby flag + every implied-flag
   cascade rule).

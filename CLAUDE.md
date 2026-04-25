@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 54 unit tests + 1 integration test pass.
+Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 58 unit tests + 1 integration test pass.
 
 Current released version: **v3.1.4** (release archives now ship a proper macOS `rust2xml-gui.app` bundle with `.icns` icon, generated via `sips` + `iconutil` in the workflow; Linux archives ship `rust2xml-gui.desktop` + `icon.png` + `install-linux.sh` helper; GUI top panel deduplicated — no more in-app "rust2xml 3.1.x" duplicate of the window title — and a clickable app-icon badge in the top-right opens `mailto:zdavatz@ywesee.com`).
 
@@ -104,7 +104,7 @@ name belongs to the Ruby project.
   `Elexis_Artikelstamm_v5.xsd`-compliant output shape is not yet
   produced.
 - **RSpec port.** 16 spec files / ~6,500 lines of RSpec. Currently
-  54 unit + 1 integration Rust tests cover the architectural pieces;
+  58 unit + 1 integration Rust tests cover the architectural pieces;
   per-file RSpec parity is not yet complete.
 - **`oddb_calc.xml` content density still trails Ruby** (12 MB vs
   41 MB). Record count is in the right ballpark; the gap is in
