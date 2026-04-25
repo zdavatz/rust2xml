@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.0**.
+Ruby gem, written in Rust. Current version: **v3.1.1**.
 
 ## Parity with oddb2xml -e
 
@@ -84,17 +84,30 @@ seven XML files:
 ./target/release/rust2xml-gui
 ```
 
+- **Always FHIR.** The GUI hard-wires `--fhir` for both buttons and
+  pulls from the FOPH ePL feed
+  (`https://epl.bag.admin.ch/static/fhir/foph-sl-export-latest-de.ndjson`).
+  Ex-factory + retail prices and limitation texts come straight out of
+  the package-level `RegulatedAuthorization` resources.
 - `Run -e (Extended)` and `Run -b (Firstbase)` start the
   download/extract pipeline in a worker thread (UI stays responsive,
-  log streams live).
+  the FHIR download/parse log streams live in the bottom panel).
+- A progress bar reports per-job completion (BAG/FHIR, Refdata,
+  Swissmedic, EPha, LPPV, ZurRose, Firstbase) plus the builder + SQLite
+  write phases.
 - Output lands at `sqlite/rust2xml_<flag>_HHMM_DD.MM.YYYY.sqlite`
   relative to the working directory (e.g. `sqlite/rust2xml_e_1430_25.04.2026.sqlite`).
 - After the run, eight tabs (`articles`, `calc`, `codes`,
   `interactions`, `limitations`, `meta`, `products`, `substances`)
   let you browse the data — every column is shown, columns are
-  resizable, the table scrolls horizontally for wide records.
-- Nested fields (`<ARTBAR>` and the four `<ARTPRI>` siblings inside
-  `<ART>`) are JSON-encoded into a single column so no data is lost.
+  resizable, the table scrolls horizontally for wide records, and
+  long cell values truncate with hover-text for the full content.
+- Nested fields are flattened into real columns:
+  `ARTBAR_E13_BC` / `ARTBAR_E13_BCSTAT` for barcodes,
+  `ARTPRI_FACTORY` / `ARTPRI_PUBLIC` / `ARTPRI_ZURROSE` /
+  `ARTPRI_ZURROSEPUB` for the four price tiers — no JSON in cells.
+- Window icon is embedded into the binary so the app shows up
+  branded in the taskbar / Dock on Linux, macOS and Windows.
 
 The SQLite file is plain — open it with `sqlite3`, DBeaver, etc.
 Each run creates a fresh timestamped file; old runs stay on disk.
@@ -211,14 +224,15 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.0
-git push origin v3.1.0
+git tag v3.1.1
+git push origin v3.1.1
 ```
 
-The current released version is **v3.1.0** — desktop UI binary
-(`rust2xml-gui`) with SQLite-backed data viewer. Bump the patch
-(`v3.1.1`), minor (`v3.2.0`) or major (`v4.0.0`) segment depending
-on the nature of the change.
+The current released version is **v3.1.1** — GUI now defaults to
+the FOPH FHIR NDJSON feed, extracts SL prices + limitations, and
+ships with a custom window icon. Bump the patch (`v3.1.2`), minor
+(`v3.2.0`) or major (`v4.0.0`) segment depending on the nature of
+the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,

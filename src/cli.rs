@@ -46,9 +46,13 @@ impl Cli {
         });
         let _ = fs::create_dir_all(util::downloads_dir());
 
+        util::progress(0.02, "Starting pipeline");
         let inputs = self.collect_inputs()?;
+        util::progress(0.85, "Building records");
         let b = Builder::new(self.opts.clone(), inputs);
+        util::progress(0.92, "Writing SQLite database");
         crate::sqlite_export::write_sqlite(&b, sqlite_path)?;
+        util::progress(1.0, "Done");
         Ok(())
     }
 
@@ -123,35 +127,36 @@ impl Cli {
     fn collect_inputs(&self) -> Result<Inputs> {
         let inputs = Mutex::new(Inputs::default());
 
-        // Describe each job as a boxed closure that mutates `inputs`.
+        // Describe each job as a labelled closure that mutates `inputs`.
+        // The label feeds the GUI progress bar.
         type Job = Box<dyn Fn(&Mutex<Inputs>) -> Result<()> + Send + Sync>;
-        let mut jobs: Vec<Job> = Vec::new();
+        let mut jobs: Vec<(&'static str, Job)> = Vec::new();
 
         let use_fhir = self.opts.fhir;
         let fhir_url = self.opts.fhir_url.clone();
 
         if use_fhir {
             let url = fhir_url.unwrap_or_else(|| DEFAULT_FHIR_URL.to_string());
-            jobs.push(Box::new(move |store: &Mutex<Inputs>| {
+            jobs.push(("BAG (FHIR)", Box::new(move |store: &Mutex<Inputs>| {
                 let d = FhirDownloader::new(url.clone())?;
                 let body = d.download()?;
                 let e = FhirExtractor::new(body);
                 let bag = e.to_hash()?;
                 store.lock().unwrap().bag.extend(bag);
                 Ok(())
-            }));
+            })));
         } else {
-            jobs.push(Box::new(|store: &Mutex<Inputs>| {
+            jobs.push(("BAG XMLPublications", Box::new(|store: &Mutex<Inputs>| {
                 let d = downloader::BagXmlDownloader::new()?;
                 let xml = d.download()?;
                 let e = BagXmlExtractor::new(xml);
                 let bag = e.to_hash()?;
                 store.lock().unwrap().bag.extend(bag);
                 Ok(())
-            }));
+            })));
         }
 
-        jobs.push(Box::new(|store: &Mutex<Inputs>| {
+        jobs.push(("Refdata Articles", Box::new(|store: &Mutex<Inputs>| {
             let d = downloader::RefdataDownloader::new()?;
             let xml = d.download()?;
             let pharma = RefdataExtractor::new(xml.clone(), "PHARMA").to_hash()?;
@@ -160,47 +165,47 @@ impl Cli {
             s.refdata_pharma.extend(pharma);
             s.refdata_nonpharma.extend(non);
             Ok(())
-        }));
+        })));
 
-        jobs.push(Box::new(|store: &Mutex<Inputs>| {
+        jobs.push(("EPha interactions", Box::new(|store: &Mutex<Inputs>| {
             let d = downloader::EphaDownloader::new()?;
             let bytes = d.download()?;
             let text = String::from_utf8_lossy(&bytes).into_owned();
             let v = EphaExtractor::new(text).to_vec();
             store.lock().unwrap().epha_interactions.extend(v);
             Ok(())
-        }));
+        })));
 
-        jobs.push(Box::new(|store: &Mutex<Inputs>| {
+        jobs.push(("LPPV list", Box::new(|store: &Mutex<Inputs>| {
             let d = downloader::LppvDownloader::new()?;
             let bytes = d.download()?;
             let text = String::from_utf8_lossy(&bytes).into_owned();
             let h = LppvExtractor::new(text).to_hash();
             store.lock().unwrap().lppv_ean13s.extend(h);
             Ok(())
-        }));
+        })));
 
         // Swissmedic packages.xlsx — supplies GTIN, PRODNO, IT,
         // PackGrSwissmedic, EinheitSwissmedic, SubstanceSwissmedic,
         // CompositionSwissmedic per no8.
-        jobs.push(Box::new(|store: &Mutex<Inputs>| {
+        jobs.push(("Swissmedic packages.xlsx", Box::new(|store: &Mutex<Inputs>| {
             let d = downloader::SwissmedicDownloader::new(SwissmedicKind::Package)?;
             let path = d.download()?;
             let e = SwissmedicExtractor::new(&path, ExtKind::Package);
             let h = e.to_hash()?;
             store.lock().unwrap().swissmedic_packages.extend(h);
             Ok(())
-        }));
+        })));
 
         // Firstbase GS1 CSV — non-pharma items published by GS1 CH.
         if self.opts.firstbase {
-            jobs.push(Box::new(|store: &Mutex<Inputs>| {
+            jobs.push(("Firstbase GS1 CSV", Box::new(|store: &Mutex<Inputs>| {
                 let d = downloader::FirstbaseDownloader::new()?;
                 let path = d.download()?;
                 let h = FirstbaseExtractor::new(&path).to_hash()?;
                 store.lock().unwrap().firstbase.extend(h);
                 Ok(())
-            }));
+            })));
         }
 
         // ZurRose transfer.dat — supplies PHAR / PRICE / VAT / VDAT.
@@ -210,7 +215,7 @@ impl Cli {
             || self.opts.percent.is_some();
         if want_zurrose {
             let transfer_dat_path = self.opts.transfer_dat.clone();
-            jobs.push(Box::new(move |store: &Mutex<Inputs>| {
+            jobs.push(("ZurRose transfer.dat", Box::new(move |store: &Mutex<Inputs>| {
                 let text = if let Some(path) = &transfer_dat_path {
                     // Operator passed a path — read it as ISO-8859 and decode.
                     let bytes = fs::read(path)
@@ -225,17 +230,24 @@ impl Cli {
                 let h = e.to_hash();
                 store.lock().unwrap().zurrose.extend(h);
                 Ok(())
-            }));
+            })));
         }
 
         // Run the jobs in parallel.  Any single failure is logged but
         // does not abort the whole run — matches the Ruby behaviour of
-        // warning and pressing on.
-        jobs.par_iter().for_each(|job| {
+        // warning and pressing on.  Progress: 5%–82% across the parallel
+        // job set, leaving headroom for builder + sqlite write.
+        let total = jobs.len() as f32;
+        let done_counter = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        util::progress(0.05, format!("Starting {} parallel sources", jobs.len()));
+        jobs.par_iter().for_each(|(label, job)| {
             if let Err(e) = job(&inputs) {
-                util::log(format!("download/extract failed: {e}"));
+                util::log(format!("download/extract failed ({label}): {e}"));
                 eprintln!("{e:#}");
             }
+            let n = done_counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            let frac = 0.05 + (n as f32 / total) * 0.77;
+            util::progress(frac, format!("{label} done ({n}/{})", total as usize));
         });
 
         let mut inputs = inputs.into_inner().unwrap();

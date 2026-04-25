@@ -29,52 +29,113 @@ pub fn record_sets(b: &Builder) -> Vec<(&'static str, Vec<Vec<Node>>)> {
     ]
 }
 
-/// Convert one node into its column value (string).  Nested nodes are
-/// JSON-encoded so callers can decode them back to structured form.
-fn node_value(node: &Node) -> String {
-    match node {
-        Node::Leaf(_, text) => text.clone(),
-        Node::Nested(_, children) => {
-            // {"FIELD":"value", ...} — preserves leaf field order via Vec.
-            let pairs: Vec<(String, String)> = children
-                .iter()
-                .map(|c| match c {
-                    Node::Leaf(k, v) => (k.clone(), v.clone()),
-                    Node::Nested(k, _) => (k.clone(), node_value(c)),
-                })
-                .collect();
-            serde_json::to_string(&pairs).unwrap_or_default()
+/// Row representation: ordered (column, value) pairs.
+///
+/// Flattening rules for nested children — applied uniformly so the
+/// resulting schema is consistent across rows that have one vs. many
+/// instances of the same nested name:
+///
+///   * Empty nested → single empty column named after the parent.
+///   * Nested with exactly one leaf child →
+///     `PARENT_CHILD` = value.
+///   * Nested with 2+ children where the first child is a leaf —
+///     treat the first leaf's *value* as a discriminator (this is
+///     `<PTYP>` for `<ARTPRI>` and `<CDTYP>` for `<ARTBAR>`):
+///       * Single remaining child →
+///         `PARENT_DISCVALUE` = value (e.g. `ARTPRI_FACTORY` = `42.99`).
+///       * Multiple remaining children →
+///         `PARENT_DISCVALUE_CHILD` = value
+///         (e.g. `ARTBAR_E13_BC`, `ARTBAR_E13_BCSTAT`).
+///     The same rule fires whether one or many ARTPRI siblings are
+///     present, so all rows produce the same columns.
+///   * Nested whose first child is itself nested (no leaf
+///     discriminator): fall back to `PARENT_INDEX_CHILD` numbering.
+fn record_to_row(record: &[Node]) -> Vec<(String, String)> {
+    let mut row: Vec<(String, String)> = Vec::new();
+    let mut handled_groups: BTreeSet<String> = BTreeSet::new();
+
+    for node in record {
+        match node {
+            Node::Leaf(name, text) => {
+                row.push((name.clone(), text.clone()));
+            }
+            Node::Nested(name, _) => {
+                if handled_groups.contains(name) {
+                    continue;
+                }
+                handled_groups.insert(name.clone());
+
+                let instances: Vec<&[Node]> = record
+                    .iter()
+                    .filter_map(|n| match n {
+                        Node::Nested(n2, c) if n2 == name => Some(c.as_slice()),
+                        _ => None,
+                    })
+                    .collect();
+                emit_nested_group(&mut row, name, &instances);
+            }
         }
+    }
+    row
+}
+
+fn emit_nested_group(row: &mut Vec<(String, String)>, parent: &str, instances: &[&[Node]]) {
+    if instances.is_empty() || (instances.len() == 1 && instances[0].is_empty()) {
+        row.push((parent.to_string(), String::new()));
+        return;
+    }
+
+    for (idx, inst) in instances.iter().enumerate() {
+        emit_nested_instance(row, parent, idx, inst);
     }
 }
 
-/// Row representation: ordered (column, value) pairs.  Multi-valued
-/// columns (e.g. four `<ARTPRI>` siblings) are gathered into a JSON
-/// array so the column count stays predictable.
-fn record_to_row(record: &[Node]) -> Vec<(String, String)> {
-    let mut grouped: Vec<(String, Vec<String>)> = Vec::new();
-    for node in record {
-        let name = match node {
-            Node::Leaf(n, _) | Node::Nested(n, _) => n.clone(),
-        };
-        let value = node_value(node);
-        if let Some(slot) = grouped.iter_mut().find(|(k, _)| k == &name) {
-            slot.1.push(value);
+fn emit_nested_instance(
+    row: &mut Vec<(String, String)>,
+    parent: &str,
+    idx: usize,
+    instance: &[Node],
+) {
+    if instance.is_empty() {
+        return;
+    }
+
+    // Single-leaf instance → PARENT_CHILD = value.
+    if instance.len() == 1 {
+        if let Node::Leaf(child_name, child_text) = &instance[0] {
+            row.push((format!("{parent}_{child_name}"), child_text.clone()));
+        }
+        return;
+    }
+
+    // 2+ children with a leaf as the first → use first leaf's *value*
+    // as discriminator suffix on the remaining children.
+    if let Node::Leaf(_disc_name, disc_value) = &instance[0] {
+        let remaining: Vec<&Node> = instance.iter().skip(1).collect();
+        if remaining.len() == 1 {
+            if let Node::Leaf(_, v) = remaining[0] {
+                row.push((format!("{parent}_{disc_value}"), v.clone()));
+            }
         } else {
-            grouped.push((name, vec![value]));
+            for child in remaining {
+                if let Node::Leaf(child_name, child_text) = child {
+                    row.push((
+                        format!("{parent}_{disc_value}_{child_name}"),
+                        child_text.clone(),
+                    ));
+                }
+            }
+        }
+        return;
+    }
+
+    // No leaf discriminator available → index-suffix fallback.
+    let n = idx + 1;
+    for child in instance {
+        if let Node::Leaf(child_name, child_text) = child {
+            row.push((format!("{parent}_{n}_{child_name}"), child_text.clone()));
         }
     }
-    grouped
-        .into_iter()
-        .map(|(k, v)| {
-            let value = if v.len() == 1 {
-                v.into_iter().next().unwrap_or_default()
-            } else {
-                serde_json::to_string(&v).unwrap_or_default()
-            };
-            (k, value)
-        })
-        .collect()
 }
 
 fn quote_ident(name: &str) -> String {
@@ -244,4 +305,90 @@ mod tests {
     }
 
     use chrono::TimeZone;
+
+    #[test]
+    fn flatten_artbar_uses_cdtyp_discriminator() {
+        let record = vec![
+            Node::leaf("PHAR", "12345"),
+            Node::Nested(
+                "ARTBAR".into(),
+                vec![
+                    Node::leaf("CDTYP", "E13"),
+                    Node::leaf("BC", "7680616570161"),
+                    Node::leaf("BCSTAT", "A"),
+                ],
+            ),
+        ];
+        let row = record_to_row(&record);
+        assert_eq!(
+            row,
+            vec![
+                ("PHAR".to_string(), "12345".to_string()),
+                ("ARTBAR_E13_BC".to_string(), "7680616570161".to_string()),
+                ("ARTBAR_E13_BCSTAT".to_string(), "A".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn single_artpri_uses_same_discriminator_as_multi() {
+        // Schema must be uniform: one or many ARTPRI siblings should
+        // both produce columns named ARTPRI_<PTYP>.
+        let mk_pri = |ptyp: &str, price: &str| {
+            Node::Nested(
+                "ARTPRI".into(),
+                vec![Node::leaf("PTYP", ptyp), Node::leaf("PRICE", price)],
+            )
+        };
+        let single = vec![mk_pri("FACTORY", "42.99")];
+        let row = record_to_row(&single);
+        assert_eq!(
+            row,
+            vec![("ARTPRI_FACTORY".to_string(), "42.99".to_string())]
+        );
+    }
+
+    #[test]
+    fn flatten_multi_nested_uses_discriminator_suffix() {
+        let mk_pri = |ptyp: &str, price: &str| {
+            Node::Nested(
+                "ARTPRI".into(),
+                vec![Node::leaf("PTYP", ptyp), Node::leaf("PRICE", price)],
+            )
+        };
+        let record = vec![
+            Node::leaf("PHAR", "12345"),
+            mk_pri("FACTORY", "42.99"),
+            mk_pri("PUBLIC", "63.05"),
+            mk_pri("ZURROSE", "45.57"),
+            mk_pri("ZURROSEPUB", "63.05"),
+        ];
+        let row = record_to_row(&record);
+        assert_eq!(
+            row,
+            vec![
+                ("PHAR".to_string(), "12345".to_string()),
+                ("ARTPRI_FACTORY".to_string(), "42.99".to_string()),
+                ("ARTPRI_PUBLIC".to_string(), "63.05".to_string()),
+                ("ARTPRI_ZURROSE".to_string(), "45.57".to_string()),
+                ("ARTPRI_ZURROSEPUB".to_string(), "63.05".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn flatten_empty_nested_emits_empty_column() {
+        let record = vec![
+            Node::leaf("PHAR", "12345"),
+            Node::Nested("ARTCOMP".into(), Vec::new()),
+        ];
+        let row = record_to_row(&record);
+        assert_eq!(
+            row,
+            vec![
+                ("PHAR".to_string(), "12345".to_string()),
+                ("ARTCOMP".to_string(), String::new()),
+            ]
+        );
+    }
 }

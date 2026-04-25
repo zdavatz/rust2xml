@@ -148,8 +148,40 @@ pub fn downloads_dir() -> PathBuf {
     GLOBAL_OPTIONS.lock().downloads_dir.clone()
 }
 
+/// Optional callback invoked alongside stdout for every `log()` line.
+/// Used by the GUI to mirror the download/extract pipeline into its
+/// log panel.  Set to `None` (default) for headless CLI usage.
+pub type LogSink = Box<dyn Fn(String) + Send + Sync>;
+
+static LOG_SINK: Lazy<Mutex<Option<LogSink>>> = Lazy::new(|| Mutex::new(None));
+
+/// Install a sink for `log()` output.  Pass `None` to clear.
+pub fn set_log_sink(sink: Option<LogSink>) {
+    *LOG_SINK.lock() = sink;
+}
+
+/// Optional callback invoked at each pipeline checkpoint.  Called with
+/// `(fraction in 0.0..=1.0, human-readable label)`.  Used by the GUI to
+/// drive a progress bar.
+pub type ProgressSink = Box<dyn Fn(f32, String) + Send + Sync>;
+
+static PROGRESS_SINK: Lazy<Mutex<Option<ProgressSink>>> = Lazy::new(|| Mutex::new(None));
+
+/// Install a sink for progress events.  Pass `None` to clear.
+pub fn set_progress_sink(sink: Option<ProgressSink>) {
+    *PROGRESS_SINK.lock() = sink;
+}
+
+/// Emit a progress checkpoint.  No-op when no sink is installed.
+pub fn progress(fraction: f32, label: impl Into<String>) {
+    if let Some(sink) = PROGRESS_SINK.lock().as_ref() {
+        sink(fraction.clamp(0.0, 1.0), label.into());
+    }
+}
+
 /// Log helper — gated by `--log`.  Matches `Oddb2xml.log` — prints with
-/// timestamp, truncated to 250 chars, to stdout.
+/// timestamp, truncated to 250 chars, to stdout, and forwards a copy to
+/// any installed `LogSink`.
 pub fn log(msg: impl AsRef<str>) {
     let opts = GLOBAL_OPTIONS.lock().clone();
     if !opts.log {
@@ -158,9 +190,13 @@ pub fn log(msg: impl AsRef<str>) {
     let m = msg.as_ref();
     let truncated: String = m.chars().take(250).collect();
     let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-    println!("{ts}: {truncated}");
+    let line = format!("{ts}: {truncated}");
+    println!("{line}");
     use std::io::Write as _;
     let _ = std::io::stdout().flush();
+    if let Some(sink) = LOG_SINK.lock().as_ref() {
+        sink(line);
+    }
 }
 
 /// Ruby `Oddb2xml.skip_download`: if a cached copy already exists under

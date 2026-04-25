@@ -7,6 +7,7 @@
 use crate::cli::Cli;
 use crate::options::{Options, PriceSource};
 use crate::sqlite_export;
+use crate::util;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use eframe::egui::{self, RichText};
 use egui_extras::{Column, TableBuilder};
@@ -17,6 +18,7 @@ use std::thread;
 /// Worker → UI events.
 enum Event {
     Log(String),
+    Progress(f32, String),
     Done(PathBuf),
     Error(String),
 }
@@ -41,6 +43,9 @@ impl RunMode {
         }
     }
     fn apply_to(&self, opts: &mut Options) {
+        // GUI always runs against the FOPH/BAG FHIR NDJSON feed —
+        // single source of truth for the new EPL data model.
+        opts.fhir = true;
         match self {
             RunMode::Extended => {
                 opts.extended = true;
@@ -67,6 +72,8 @@ pub struct GuiApp {
     rx: Option<Receiver<Event>>,
     running_mode: Option<RunMode>,
     log: Vec<String>,
+    progress: f32,
+    progress_label: String,
     sqlite_path: Option<PathBuf>,
     table_names: Vec<String>,
     selected_table: Option<String>,
@@ -80,6 +87,8 @@ impl Default for GuiApp {
             rx: None,
             running_mode: None,
             log: Vec::new(),
+            progress: 0.0,
+            progress_label: String::new(),
             sqlite_path: None,
             table_names: Vec::new(),
             selected_table: None,
@@ -98,6 +107,8 @@ impl GuiApp {
         self.rx = Some(rx);
         self.running_mode = Some(mode);
         self.log.clear();
+        self.progress = 0.0;
+        self.progress_label.clear();
         self.last_error = None;
         self.table_cache = None;
         self.selected_table = None;
@@ -120,11 +131,34 @@ impl GuiApp {
             opts.log = true;
             mode.apply_to(&mut opts);
 
+            // Wire util::log() into the GUI log channel so every
+            // download/extract step shows up live.
+            let tx_for_log = tx_thread.clone();
+            let ctx_for_log = ctx_thread.clone();
+            util::set_log_sink(Some(Box::new(move |line| {
+                let _ = tx_for_log.send(Event::Log(line));
+                ctx_for_log.request_repaint();
+            })));
+
+            // Wire pipeline progress events into the GUI progress bar.
+            let tx_for_progress = tx_thread.clone();
+            let ctx_for_progress = ctx_thread.clone();
+            util::set_progress_sink(Some(Box::new(move |frac, label| {
+                let _ = tx_for_progress.send(Event::Progress(frac, label));
+                ctx_for_progress.request_repaint();
+            })));
+
             let _ = tx_thread.send(Event::Log("Downloading sources...".into()));
             ctx_thread.request_repaint();
 
             let cli = Cli::new(opts);
             let result = cli.run_to_sqlite(&sqlite_path);
+
+            // Detach sinks before signalling completion so any late
+            // stragglers don't sneak in after we mark the run done.
+            util::set_log_sink(None);
+            util::set_progress_sink(None);
+
             match result {
                 Ok(()) => {
                     let _ = tx_thread.send(Event::Log("Done.".into()));
@@ -147,6 +181,10 @@ impl GuiApp {
         while let Ok(ev) = rx.try_recv() {
             match ev {
                 Event::Log(line) => self.log.push(line),
+                Event::Progress(frac, label) => {
+                    self.progress = frac;
+                    self.progress_label = label;
+                }
                 Event::Done(path) => {
                     self.log.push(format!("SQLite written: {}", path.display()));
                     self.sqlite_path = Some(path);
@@ -250,13 +288,36 @@ fn load_table(path: &Path, name: &str) -> rusqlite::Result<TableData> {
 
 fn value_to_string(v: &rusqlite::types::Value) -> String {
     use rusqlite::types::Value;
-    match v {
+    let raw = match v {
         Value::Null => String::new(),
         Value::Integer(i) => i.to_string(),
         Value::Real(r) => r.to_string(),
         Value::Text(t) => t.clone(),
         Value::Blob(b) => format!("<{} bytes>", b.len()),
+    };
+    // Collapse line breaks + tabs to single spaces.  Long German
+    // limitation descriptions ship with embedded newlines; in a 18-px
+    // table row those force egui to either shrink the label out of
+    // view or skip drawing it entirely, which is why the limitations
+    // tab looked blank before.
+    let mut out = String::with_capacity(raw.len());
+    let mut prev_space = false;
+    for ch in raw.chars() {
+        let normalized = match ch {
+            '\n' | '\r' | '\t' => ' ',
+            other => other,
+        };
+        if normalized == ' ' {
+            if !prev_space {
+                out.push(' ');
+                prev_space = true;
+            }
+        } else {
+            out.push(normalized);
+            prev_space = false;
+        }
     }
+    out
 }
 
 impl eframe::App for GuiApp {
@@ -294,11 +355,24 @@ impl eframe::App for GuiApp {
                 if running {
                     ui.spinner();
                     ui.label(format!(
-                        "Running {}... (this can take ~20s on first run)",
+                        "Running {}...",
                         self.running_mode.unwrap().label()
                     ));
                 }
             });
+            if running_or_progressed(self.running_mode.is_some(), self.progress) {
+                ui.add_space(4.0);
+                let label = if self.progress_label.is_empty() {
+                    format!("{:.0}%", self.progress * 100.0)
+                } else {
+                    format!("{:.0}% — {}", self.progress * 100.0, self.progress_label)
+                };
+                ui.add(
+                    egui::ProgressBar::new(self.progress)
+                        .text(label)
+                        .desired_width(ui.available_width()),
+                );
+            }
             if let Some(p) = &self.sqlite_path {
                 ui.horizontal(|ui| {
                     ui.label("DB:");
@@ -371,7 +445,12 @@ impl eframe::App for GuiApp {
                         let r = &data.rows[idx];
                         for value in r {
                             row.col(|ui| {
-                                ui.label(value);
+                                ui.add(
+                                    egui::Label::new(value)
+                                        .truncate()
+                                        .selectable(true),
+                                )
+                                .on_hover_text(value);
                             });
                         }
                     });
@@ -379,6 +458,13 @@ impl eframe::App for GuiApp {
             });
         });
     }
+}
+
+/// Show progress bar while running, or when a completed run left a
+/// final value on screen (so the user sees "Done" briefly before the
+/// next click).
+fn running_or_progressed(running: bool, progress: f32) -> bool {
+    running || progress > 0.0
 }
 
 impl Clone for TableData {

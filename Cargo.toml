@@ -1,6 +1,6 @@
 [package]
 name = "rust2xml"
-version = "3.1.0"
+version = "3.1.1"
 edition = "2021"
 rust-version = "1.75"
 description = "Swiss drug database XML/DAT generator — creates files from swissINDEX, BAG-XML/FHIR and Swissmedic"
@@ -118,6 +118,10 @@ egui_extras = { version = "0.29", default-features = false }
 
 # Embedded SQLite — bundled so no system libsqlite needed on any target
 rusqlite = { version = "0.32", features = ["bundled"] }
+
+# PNG decoder for the embedded app icon (rust2xml-gui).  Using `image`
+# because eframe already pulls it in transitively.
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [build-dependencies]
 # Compile the pest grammar at build time
