@@ -6,7 +6,7 @@
   IgnorableNamespaces="uap rescap">
 
   <Identity
-    Name="yweseeGmbH.Rust2Xml"
+    Name="yweseeGmbH.rust2xml"
     Publisher="CN=3F71A827-F362-4FF2-A406-EA63C19EA85B"
     Version="1.0.0.0"
     ProcessorArchitecture="x64" />
