@@ -1,8 +1,9 @@
 # rust2xml
 
-Swiss drug database XML / DAT generator — pulls from public sources
-(Refdata, BAG/FOPH FHIR, Swissmedic, ZurRose, EPha, Migel, Firstbase)
-and emits a bundle of XML files plus an optional legacy `.dat`.
+Swiss Healthcare Public Domain data generator (XML, SQLite, CSV, …)
+— pulls from public sources (Refdata, BAG/FOPH FHIR, Swissmedic,
+ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
+plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
 Ruby gem, written in Rust. Current version: **v3.1.6**.

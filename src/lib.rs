@@ -1,4 +1,4 @@
-//! rust2xml — Swiss drug database XML/DAT generator.
+//! rust2xml — Swiss Healthcare Public Domain data generator (XML, SQLite, CSV, …).
 //!
 //! Generates XML (+ legacy `.dat`) from public sources:
 //! Refdata, BAG-XML / FOPH FHIR, Swissmedic, ZurRose, EPha, Migel, Firstbase.

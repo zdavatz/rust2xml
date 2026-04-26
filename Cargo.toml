@@ -3,7 +3,7 @@ name = "rust2xml"
 version = "3.1.6"
 edition = "2021"
 rust-version = "1.75"
-description = "Swiss drug database XML/DAT generator — creates files from swissINDEX, BAG-XML/FHIR and Swissmedic"
+description = "Swiss Healthcare Public Domain data generator XML, Sqlite, CSV etc. — creates files from swissINDEX, BAG-XML/FHIR and Swissmedic"
 license = "GPL-3.0-only"
 authors = [
     "Yasuhiro Asaka <yasaka@ywesee.com>",

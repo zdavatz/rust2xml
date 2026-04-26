@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 58 unit tests + 1 integration test pass.
+Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss Healthcare Public Domain data files (XML, SQLite, CSV, DAT). All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 58 unit tests + 1 integration test pass.
 
 Current released version: **v3.1.6** (every output the CLI and GUI write now lives under `~/rust2xml/`: SQLite snapshots in `~/rust2xml/sqlite/`, XML in `~/rust2xml/xml/`, raw upstream caches in `~/rust2xml/downloads/`. Resolved via `dirs::home_dir()` so the same code path also targets the per-app container under `~/Library/Containers/com.ywesee.rust2xml/Data/` once the Mac App Store sandbox is enabled — no further branching needed. The GUI top panel gained an **📂 Open Data Folder** button that reveals `~/rust2xml/` in Finder / Explorer / `xdg-open`).
 
