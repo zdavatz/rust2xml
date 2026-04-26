@@ -393,11 +393,34 @@ impl Builder {
                 .filter(|s| !s.is_empty())
                 .unwrap_or_else(|| item.atc_code.clone());
 
+            // Refdata is the canonical source for human-readable
+            // article descriptions (`PONSTAN Kaps 250 mg 500 Stk`).
+            // FHIR/BAG only carries Marketing-Authorisation names, so
+            // without a refdata fallback the products tab's DSCRD/DSCRF
+            // columns are empty.  Order: refdata → Swissmedic xlsx
+            // sequence name (German only) → BAG sequence/name.
+            let refdata = self
+                .inputs
+                .refdata_pharma
+                .get(ean13)
+                .or_else(|| self.inputs.refdata_nonpharma.get(ean13));
+            let dscrd = first_non_empty(&[
+                refdata.map(|r| r.desc_de.as_str()).unwrap_or(""),
+                smdata.map(|s| s.sequence_name.as_str()).unwrap_or(""),
+                item.desc_de.as_str(),
+                item.name_de.as_str(),
+            ]);
+            let dscrf = first_non_empty(&[
+                refdata.map(|r| r.desc_fr.as_str()).unwrap_or(""),
+                item.desc_fr.as_str(),
+                item.name_fr.as_str(),
+            ]);
+
             let mut fields: Vec<(String, String)> = vec![
                 ("GTIN".into(), gtin),
                 ("PRODNO".into(), prodno),
-                ("DSCRD".into(), item.desc_de.clone()),
-                ("DSCRF".into(), item.desc_fr.clone()),
+                ("DSCRD".into(), dscrd),
+                ("DSCRF".into(), dscrf),
                 ("ATC".into(), atc),
                 ("IT".into(), it_code),
                 ("CPT".into(), String::new()),
@@ -424,11 +447,23 @@ impl Builder {
                 continue;
             }
             emitted_ean13.insert(ean13.clone());
+            let refdata = self
+                .inputs
+                .refdata_pharma
+                .get(ean13)
+                .or_else(|| self.inputs.refdata_nonpharma.get(ean13));
+            let dscrd = first_non_empty(&[
+                refdata.map(|r| r.desc_de.as_str()).unwrap_or(""),
+                sm.sequence_name.as_str(),
+            ]);
+            let dscrf = first_non_empty(&[
+                refdata.map(|r| r.desc_fr.as_str()).unwrap_or(""),
+            ]);
             let mut fields: Vec<(String, String)> = vec![
                 ("GTIN".into(), ean13.clone()),
                 ("PRODNO".into(), sm.prodno.clone()),
-                ("DSCRD".into(), sm.sequence_name.clone()),
-                ("DSCRF".into(), String::new()),
+                ("DSCRD".into(), dscrd),
+                ("DSCRF".into(), dscrf),
                 ("ATC".into(), sm.atc_code.clone()),
                 ("IT".into(), sm.ith_swissmedic.clone()),
                 ("CPT".into(), String::new()),
@@ -462,13 +497,38 @@ impl Builder {
                     continue;
                 }
                 let zr = self.inputs.zurrose.get(pkg_ean13);
+                // Refdata is the canonical source for the human-readable
+                // article description.  In FHIR mode `pkg.desc_*` is
+                // empty (FHIR only carries names), so fall back through
+                // refdata → Swissmedic xlsx → BAG name.
+                let refdata = self
+                    .inputs
+                    .refdata_pharma
+                    .get(pkg_ean13)
+                    .or_else(|| self.inputs.refdata_nonpharma.get(pkg_ean13));
+                let smdata = self.inputs.swissmedic_packages.get(&pkg.swissmedic_number8);
+                let dscrd = first_non_empty(&[
+                    refdata.map(|r| r.desc_de.as_str()).unwrap_or(""),
+                    smdata.map(|s| s.sequence_name.as_str()).unwrap_or(""),
+                    pkg.desc_de.as_str(),
+                    pkg.name_de.as_str(),
+                    item.desc_de.as_str(),
+                    item.name_de.as_str(),
+                ]);
+                let dscrf = first_non_empty(&[
+                    refdata.map(|r| r.desc_fr.as_str()).unwrap_or(""),
+                    pkg.desc_fr.as_str(),
+                    pkg.name_fr.as_str(),
+                    item.desc_fr.as_str(),
+                    item.name_fr.as_str(),
+                ]);
                 let nt = ArtFields {
                     ref_data: "1", // from refdata/SL
                     phar: zr.map(|z| z.pharmacode.clone()).unwrap_or_default(),
                     vat: zr.map(|z| z.vat.clone()).unwrap_or_default(),
                     salecd: "A",
-                    dscrd: pkg.desc_de.clone(),
-                    dscrf: pkg.desc_fr.clone(),
+                    dscrd,
+                    dscrf,
                     barcodes: vec![(String::from("E13"), pkg_ean13.clone(), "A")],
                     prices: art_prices(
                         &pkg.prices.exf_price.price,
@@ -742,6 +802,18 @@ fn hash_of_nodes(children: &[Node]) -> String {
 /// Adapt a flat tag→text list into `Vec<Node>` for the shared emitter.
 fn flat(pairs: Vec<(String, String)>) -> Vec<Node> {
     pairs.into_iter().map(|(k, v)| Node::Leaf(k, v)).collect()
+}
+
+/// Return the first non-empty candidate as an owned `String`.  Used to
+/// pick a description from a fallback chain (refdata → Swissmedic xlsx
+/// → BAG/FHIR).
+fn first_non_empty(candidates: &[&str]) -> String {
+    for c in candidates {
+        if !c.is_empty() {
+            return (*c).to_string();
+        }
+    }
+    String::new()
 }
 
 impl From<anyhow::Error> for crate::Error {

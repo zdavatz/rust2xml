@@ -66,6 +66,10 @@ impl RunMode {
 struct TableData {
     columns: Vec<String>,
     rows: Vec<Vec<String>>,
+    /// One lowercased haystack per row (all column values joined with
+    /// `\u{1f}`).  Built once at load time so the search box can filter
+    /// 180 K-row tables on every keystroke without re-lowercasing.
+    haystacks: Vec<String>,
 }
 
 /// Embedded icon PNG used both for the window header and for the
@@ -84,6 +88,16 @@ pub struct GuiApp {
     table_cache: Option<TableData>,
     last_error: Option<String>,
     icon_texture: Option<egui::TextureHandle>,
+    /// Substring search over every column of the selected tab.  Empty
+    /// string means "show all rows".
+    search_query: String,
+    /// Snapshot of `search_query` at the time `filtered_rows` was last
+    /// rebuilt.  We diff every frame so the filter never drifts even if
+    /// `Response::changed()` misses an event.
+    last_filter_query: String,
+    /// Indices into `table_cache.rows` that the current `search_query`
+    /// matches.  Recomputed whenever query or tab changes.
+    filtered_rows: Vec<usize>,
 }
 
 impl Default for GuiApp {
@@ -100,6 +114,9 @@ impl Default for GuiApp {
             table_cache: None,
             last_error: None,
             icon_texture: None,
+            search_query: String::new(),
+            last_filter_query: String::new(),
+            filtered_rows: Vec::new(),
         }
     }
 }
@@ -266,6 +283,10 @@ impl GuiApp {
 
     fn select_table(&mut self, name: &str) {
         self.selected_table = Some(name.to_string());
+        // Switching tabs resets the search — column sets differ between
+        // articles/products/limitations/etc., so a stale query is rarely
+        // what the user wants.
+        self.search_query.clear();
         let path = match &self.sqlite_path {
             Some(p) => p.clone(),
             None => return,
@@ -275,6 +296,31 @@ impl GuiApp {
             TableData::default()
         });
         self.table_cache = Some(data);
+        self.recompute_filter();
+    }
+
+    /// Rebuild `filtered_rows` from `search_query` against the current
+    /// `table_cache`.  Empty query → all rows.
+    fn recompute_filter(&mut self) {
+        self.last_filter_query = self.search_query.clone();
+        let data = match self.table_cache.as_ref() {
+            Some(d) => d,
+            None => {
+                self.filtered_rows.clear();
+                return;
+            }
+        };
+        let needle = self.search_query.trim().to_lowercase();
+        if needle.is_empty() {
+            self.filtered_rows = (0..data.rows.len()).collect();
+            return;
+        }
+        self.filtered_rows = data
+            .haystacks
+            .iter()
+            .enumerate()
+            .filter_map(|(i, h)| if h.contains(needle.as_str()) { Some(i) } else { None })
+            .collect();
     }
 }
 
@@ -312,7 +358,15 @@ fn load_table(path: &Path, name: &str) -> rusqlite::Result<TableData> {
         })?
         .flatten()
         .collect();
-    Ok(TableData { columns, rows })
+    let haystacks: Vec<String> = rows
+        .iter()
+        .map(|r| r.join("\u{1f}").to_lowercase())
+        .collect();
+    Ok(TableData {
+        columns,
+        rows,
+        haystacks,
+    })
 }
 
 fn value_to_string(v: &rusqlite::types::Value) -> String {
@@ -446,19 +500,44 @@ impl eframe::App for GuiApp {
                 return;
             }
 
+            // Tab strip — selecting a tab loads & resets the search.
             let names = self.table_names.clone();
+            let mut new_select: Option<String> = None;
             ui.horizontal_wrapped(|ui| {
                 for name in &names {
                     let selected = self.selected_table.as_deref() == Some(name.as_str());
                     if ui.selectable_label(selected, name).clicked() && !selected {
-                        self.select_table(name);
+                        new_select = Some(name.clone());
                     }
                 }
             });
+            if let Some(n) = new_select {
+                self.select_table(&n);
+            }
+
+            // Search box — case-insensitive substring across every column
+            // of the currently-selected tab.  We diff against
+            // `last_filter_query` every frame so a missed `changed()`
+            // event can never leave the filter stale.
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Search:").strong());
+                let avail = ui.available_width();
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.search_query)
+                        .hint_text("substring across all columns (case-insensitive)")
+                        .desired_width(avail - 90.0),
+                );
+                if ui.button("Clear").clicked() {
+                    self.search_query.clear();
+                }
+            });
+            if self.search_query != self.last_filter_query {
+                self.recompute_filter();
+            }
             ui.separator();
 
             let data = match self.table_cache.as_ref() {
-                Some(d) => d.clone(),
+                Some(d) => d,
                 None => return,
             };
             if data.columns.is_empty() {
@@ -466,7 +545,18 @@ impl eframe::App for GuiApp {
                 return;
             }
 
-            ui.label(format!("{} rows × {} cols", data.rows.len(), data.columns.len()));
+            let total = data.rows.len();
+            let visible = self.filtered_rows.len();
+            if self.search_query.trim().is_empty() {
+                ui.label(format!("{total} rows × {} cols", data.columns.len()));
+            } else {
+                ui.label(format!(
+                    "{visible} of {total} rows match × {} cols",
+                    data.columns.len()
+                ));
+            }
+
+            let filtered = &self.filtered_rows;
 
             // Horizontal+vertical scroll wraps a TableBuilder.  Each column
             // is `Column::initial(160.0).resizable(true).clip(true)` so a
@@ -487,9 +577,9 @@ impl eframe::App for GuiApp {
                     }
                 })
                 .body(|body| {
-                    body.rows(18.0, data.rows.len(), |mut row| {
-                        let idx = row.index();
-                        let r = &data.rows[idx];
+                    body.rows(18.0, filtered.len(), |mut row| {
+                        let row_idx = filtered[row.index()];
+                        let r = &data.rows[row_idx];
                         for value in r {
                             row.col(|ui| {
                                 ui.add(
@@ -519,6 +609,7 @@ impl Clone for TableData {
         Self {
             columns: self.columns.clone(),
             rows: self.rows.clone(),
+            haystacks: self.haystacks.clone(),
         }
     }
 }

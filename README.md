@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.4**.
+Ruby gem, written in Rust. Current version: **v3.1.5**.
 
 ## Parity with oddb2xml -e
 
@@ -102,6 +102,17 @@ seven XML files:
   let you browse the data — every column is shown, columns are
   resizable, the table scrolls horizontally for wide records, and
   long cell values truncate with hover-text for the full content.
+- A search box above the table does case-insensitive substring
+  matching across **every column** of the selected tab.  Each row's
+  values are joined into a single lowercased haystack at load time so
+  filtering 180 K-row tables stays responsive on every keystroke;
+  switching tabs resets the query, and the row counter reads
+  `X of Y rows match × N cols` while filtering.
+- Article + product `DSCRD` / `DSCRF` resolve through a refdata-first
+  fallback chain (refdata.desc_de → Swissmedic xlsx `sequence_name`
+  → BAG `desc_*` → BAG `name_*`) so brand-name searches like
+  `PONSTAN` / `INDERAL` find rows even in FHIR mode where BAG only
+  carries Marketing-Authorisation names.
 - Nested fields are flattened into real columns:
   `ARTBAR_E13_BC` / `ARTBAR_E13_BCSTAT` for barcodes,
   `ARTPRI_FACTORY` / `ARTPRI_PUBLIC` / `ARTPRI_ZURROSE` /
@@ -242,16 +253,17 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.4
-git push origin v3.1.4
+git tag v3.1.5
+git push origin v3.1.5
 ```
 
-The current released version is **v3.1.4** — release archives now
-ship a proper macOS `rust2xml-gui.app` bundle (with `.icns` icon
-generated via `sips` + `iconutil`) and a Linux `.desktop` launcher
-+ icon + installer script. Bump the patch (`v3.1.5`), minor
-(`v3.2.0`) or major (`v4.0.0`) segment depending on the nature of
-the change.
+The current released version is **v3.1.5** — adds an in-tab
+search box and a refdata-first fallback chain for article + product
+descriptions.  Release archives ship a macOS `rust2xml-gui.app`
+bundle (with `.icns` icon generated via `sips` + `iconutil`) and a
+Linux `.desktop` launcher + icon + installer script.  Bump the patch
+(`v3.1.6`), minor (`v3.2.0`) or major (`v4.0.0`) segment depending
+on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,

@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 58 unit tests + 1 integration test pass.
 
-Current released version: **v3.1.4** (release archives now ship a proper macOS `rust2xml-gui.app` bundle with `.icns` icon, generated via `sips` + `iconutil` in the workflow; Linux archives ship `rust2xml-gui.desktop` + `icon.png` + `install-linux.sh` helper; GUI top panel deduplicated — no more in-app "rust2xml 3.1.x" duplicate of the window title — and a clickable app-icon badge in the top-right opens `mailto:zdavatz@ywesee.com`).
+Current released version: **v3.1.5** (GUI now has a per-tab search box that does case-insensitive substring matching across every column of the selected tab — articles / calc / codes / interactions / limitations / products / substances. Switching tabs resets the query, an empty query shows all rows, and the row counter reads `X of Y rows match × N cols` while filtering. The products + articles tabs now resolve `DSCRD`/`DSCRF` via a refdata-first fallback chain (refdata.desc_de → Swissmedic xlsx `sequence_name` → BAG `desc_*` → BAG `name_*`) so brand-name searches like `PONSTAN` / `INDERAL` find rows even in FHIR mode where BAG only carries Marketing-Authorisation names).
+
+Previously: v3.1.4 — release archives ship a macOS `rust2xml-gui.app` bundle with `.icns` icon (generated via `sips` + `iconutil` in the workflow); Linux archives ship `rust2xml-gui.desktop` + `icon.png` + `install-linux.sh` helper; GUI top panel deduplicated — no more in-app "rust2xml 3.1.x" duplicate of the window title — and a clickable app-icon badge in the top-right opens `mailto:zdavatz@ywesee.com`.
 
 When bumping the version, keep `Cargo.toml` and `src/version.rs` in sync — they are checked independently and a mismatch will show up in `rust2xml --version`.
 
