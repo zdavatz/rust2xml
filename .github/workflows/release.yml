@@ -67,7 +67,7 @@ jobs:
             cross: true
             gui: false  # eframe cross-build needs an arm64 sysroot — not worth the complexity for v1
           - target: x86_64-apple-darwin
-            os: macos-13
+            os: macos-15-intel
             archive: tar.gz
             binary-suffix: ""
             gui: true
@@ -292,7 +292,7 @@ jobs:
             > "$app/Contents/Info.plist"
 
       - name: import signing certificates
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        if: env.MACOS_CERTIFICATE != ''
         env:
           MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -332,7 +332,9 @@ jobs:
           security find-identity -v build.keychain
 
       - name: code-sign for DMG (Developer ID, optional)
-        if: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE != '' }}
+        if: env.MACOS_DEVELOPER_ID_CERTIFICATE != ''
+        env:
+          MACOS_DEVELOPER_ID_CERTIFICATE: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE }}
         run: |
           set -euo pipefail
           identity=$(security find-identity -v build.keychain \
@@ -362,11 +364,12 @@ jobs:
           rm -rf "$staging"
 
       - name: notarize DMG (only if Developer ID signed it)
-        if: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.MACOS_DEVELOPER_ID_CERTIFICATE != '' }}
+        if: env.APPLE_API_KEY_P8 != '' && env.MACOS_DEVELOPER_ID_CERTIFICATE != ''
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          MACOS_DEVELOPER_ID_CERTIFICATE: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE }}
         run: |
           set -euo pipefail
           version="${{ steps.vars.outputs.version }}"
@@ -389,7 +392,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: build + sign + upload Mac App Store .pkg
-        if: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.APPLE_TEAM_ID != '' }}
+        if: env.APPLE_API_KEY_P8 != '' && env.APPLE_TEAM_ID != ''
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
@@ -517,7 +520,7 @@ jobs:
             /p "rust2xml-${version}-windows-x64.msix" /o
 
       - name: sign MSIX
-        if: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+        if: env.WINDOWS_CERTIFICATE != ''
         shell: pwsh
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
@@ -539,7 +542,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: submit to Microsoft Store
-        if: ${{ vars.MSSTORE_APP_ID != '' && secrets.MSSTORE_TENANT_ID != '' }}
+        if: vars.MSSTORE_APP_ID != '' && env.MSSTORE_TENANT_ID != ''
         shell: pwsh
         env:
           MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
