@@ -9,7 +9,7 @@
     <key>CFBundleIconFile</key>
     <string>icon</string>
     <key>CFBundleIdentifier</key>
-    <string>org.ywesee.rust2xml-gui</string>
+    <string>com.ywesee.rust2xml</string>
     <key>CFBundleName</key>
     <string>rust2xml</string>
     <key>CFBundleDisplayName</key>
@@ -22,6 +22,10 @@
     <string>__VERSION__</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.business</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © ywesee GmbH. GPL-3.0-only.</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.15</string>
     <key>NSHighResolutionCapable</key>

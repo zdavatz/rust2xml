@@ -147,6 +147,66 @@ origin vX.Y.Z`.
 The workflow also has a `workflow_dispatch` trigger so releases can
 be re-run by hand from the Actions tab if an upload fails midway.
 
+### Store distribution (Mac App Store + Microsoft Store)
+
+Two extra workflow jobs sit alongside the matrix build:
+
+- `macos-store` (gated on `vars.MACOS_STORE_ENABLED == 'true'`):
+  builds a universal `rust2xml-gui.app`, signs it with the Developer
+  ID Application identity for a notarized DMG, and (when the App
+  Store secrets are present) signs again with the Apple Distribution
+  identity, runs `productbuild` for a `.pkg`, then uploads to App
+  Store Connect via `iTMSTransporter` / `altool`.  Bundle ID is
+  `com.ywesee.rust2xml`; entitlements live in `entitlements.plist`
+  (Developer ID, hardened runtime + JIT) and
+  `entitlements-appstore.plist` (App Sandbox + JIT + network +
+  user-selected file r/w).  The team-ID prefix in
+  `application-identifier` is substituted at build time from
+  `secrets.APPLE_TEAM_ID`.
+- `windows-msix` (gated on `vars.MSSTORE_ENABLED == 'true'`): builds
+  the GUI, packs `windows/AppxManifest.xml` + `windows/assets/*.png`
+  (5 store logos generated from `assets/icon.png` via `sips`) into an
+  MSIX with `makeappx`, signs it if `secrets.WINDOWS_CERTIFICATE` is
+  present, then uploads + commits a Microsoft Store submission via
+  the devcenter REST API when `vars.MSSTORE_APP_ID` and the three
+  `MSSTORE_*` Azure secrets are set.
+
+Both store jobs are off by default — flip the variables on per-repo
+once the App ID is registered and the secrets are loaded:
+
+```sh
+gh variable set MACOS_STORE_ENABLED -R zdavatz/rust2xml -b true
+gh variable set MSSTORE_ENABLED     -R zdavatz/rust2xml -b true
+gh variable set MSSTORE_APP_ID      -R zdavatz/rust2xml -b "<store app id>"
+```
+
+Required secrets (re-set on `rust2xml` from the original sources —
+GitHub secrets are write-only, so `gh secret list` on
+`swissdamed2sqlite` only shows names):
+
+```
+APPLE_TEAM_ID, APPLE_API_KEY_P8, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID,
+MACOS_CERTIFICATE (+_PASSWORD),
+MACOS_INSTALLER_CERTIFICATE (+_PASSWORD),
+MACOS_DEVELOPER_ID_CERTIFICATE (+_PASSWORD),
+MACOS_PROVISIONING_PROFILE,
+WINDOWS_CERTIFICATE (+_PASSWORD)              # optional MSIX co-sign
+MSSTORE_TENANT_ID, MSSTORE_CLIENT_ID, MSSTORE_CLIENT_SECRET
+```
+
+If the gate variables are unset the matrix build still produces the
+existing five tarballs/zips and the GitHub Release is unchanged.
+
+### App Store sandbox caveat
+
+The current `rust2xml-gui` writes to `<cwd>/sqlite/<file>.sqlite`.
+A sandboxed App Store build can only write into the app container
+(`~/Library/Containers/com.ywesee.rust2xml/Data/...`) or to a path
+selected by the user via `NSSavePanel`.  The Developer ID DMG path
+keeps the current behaviour; the Mac App Store `.pkg` will need the
+GUI to either default to the container or expose a save-as picker
+before App Review will accept it.
+
 ## Related Rust projects in this workspace
 
 - `fb2sqlite` — GS1 barcode registry + MiGeL (related data source).

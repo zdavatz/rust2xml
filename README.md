@@ -277,6 +277,36 @@ Pre-release tags (e.g. `v3.0.5-rc.1`) are marked as pre-release
 automatically. The workflow can also be dispatched manually from the
 Actions tab.
 
+### Mac App Store + Microsoft Store
+
+Two opt-in jobs run alongside the matrix build for store
+distribution:
+
+- **Mac App Store + notarized DMG** (`macos-store`, gated on
+  `vars.MACOS_STORE_ENABLED == 'true'`).  Builds a universal
+  `rust2xml-gui.app`, signs it with the Developer ID Application
+  identity for a notarized DMG (uploaded as a release artefact), and
+  — when the App Store secrets are present — signs again with the
+  Apple Distribution identity, runs `productbuild` for a `.pkg`, and
+  uploads to App Store Connect via `iTMSTransporter` / `altool`.
+  Bundle ID `com.ywesee.rust2xml`; entitlements files
+  (`entitlements.plist` and `entitlements-appstore.plist`) live at
+  the repo root.
+- **Microsoft Store** (`windows-msix`, gated on
+  `vars.MSSTORE_ENABLED == 'true'`).  Packs the GUI binary +
+  `windows/AppxManifest.xml` + 5 store logos under `windows/assets/`
+  into an MSIX with `makeappx`, optionally signs it with
+  `secrets.WINDOWS_CERTIFICATE`, then uploads + commits a Microsoft
+  Store submission via the devcenter REST API when
+  `vars.MSSTORE_APP_ID` and the three `MSSTORE_*` Azure secrets are
+  set.
+
+Both jobs are off by default — `gh variable set MACOS_STORE_ENABLED
+-b true` (and `MSSTORE_ENABLED`, `MSSTORE_APP_ID`) flips them on
+once the App ID is registered and the corresponding secrets are
+loaded via `gh secret set`.  See the **Store distribution** section
+in `CLAUDE.md` for the full secret list.
+
 ## License
 
 GPL-3.0-only, inherited from oddb2xml.
