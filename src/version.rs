@@ -1,3 +1,3 @@
 //! Crate version. Kept in sync with `lib/oddb2xml/version.rb`.
 
-pub const VERSION: &str = "3.1.7";
+pub const VERSION: &str = "3.1.8";

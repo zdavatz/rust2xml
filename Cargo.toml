@@ -1,6 +1,6 @@
 [package]
 name = "rust2xml"
-version = "3.1.7"
+version = "3.1.8"
 edition = "2021"
 rust-version = "1.75"
 description = "Swiss Healthcare Public Domain data generator XML, Sqlite, CSV etc. — creates files from swissINDEX, BAG-XML/FHIR and Swissmedic"
@@ -156,3 +156,12 @@ codegen-units = 1
 [profile.dev]
 opt-level = 0
 debug = true
+
+# winit 0.30.13 calls the private macOS API
+# `_CGSSetWindowBackgroundBlurRadius` from `set_blur` (winit#4538).
+# Apple App Store binary scanners reject any binary that imports
+# private symbols, so we point eframe→egui-winit→winit at a local
+# fork with that one function turned into a no-op.  Same patch as
+# `swissdamed2sqlite` and `eudamed2firstbase`.
+[patch.crates-io]
+winit = { path = "winit-patched" }
