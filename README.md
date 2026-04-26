@@ -316,6 +316,27 @@ once the App ID is registered and the corresponding secrets are
 loaded via `gh secret set`.  See the **Store distribution** section
 in `CLAUDE.md` for the full secret list.
 
+#### Microsoft Store screenshots
+
+`screenshots/windows/` holds the seven 1366 × 768 PNGs uploaded with
+the Microsoft Store submission (empty state, run-in-progress with
+progress bar + log, populated tab views, search filter).  They are
+generated end-to-end by `screenshots/windows/orchestrate.ps1`, which:
+
+1. launches `target/release/rust2xml-gui.exe`,
+2. resizes the window to 1366 × 768 (Microsoft Store's recommended
+   minimum),
+3. captures the empty state, then mouse-clicks **Run -e (Extended)**,
+4. waits for `~/rust2xml/sqlite/rust2xml_e_*.sqlite` to appear,
+5. captures populated tab views + a search-filtered view,
+6. closes the GUI it launched.
+
+To regenerate them after a UI change:
+
+```pwsh
+pwsh -NoProfile -File screenshots/windows/orchestrate.ps1
+```
+
 ## License
 
 GPL-3.0-only, inherited from oddb2xml.

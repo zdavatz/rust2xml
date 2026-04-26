@@ -200,6 +200,32 @@ MSSTORE_TENANT_ID, MSSTORE_CLIENT_ID, MSSTORE_CLIENT_SECRET
 If the gate variables are unset the matrix build still produces the
 existing five tarballs/zips and the GitHub Release is unchanged.
 
+### Microsoft Store screenshots
+
+`screenshots/windows/` carries the 1366 × 768 PNGs used in the
+Microsoft Store submission plus the PowerShell tooling that produces
+them:
+
+- `orchestrate.ps1` — end-to-end: launches
+  `target/release/rust2xml-gui.exe`, resizes to 1366 × 768, captures
+  the empty state, mouse-clicks **Run -e (Extended)**, waits for the
+  `~/rust2xml/sqlite/rust2xml_e_*.sqlite` file the GUI writes on
+  completion, then captures populated tab views + a search-filtered
+  view.  **Always closes the GUI it launched** — leaving the window
+  open across sessions is intrusive.  Re-run with
+  `pwsh -NoProfile -File screenshots/windows/orchestrate.ps1`.
+- `capture.ps1` — single-shot helper.  Pass `-OutputName foo` to grab
+  whichever rust2xml-gui window is currently visible; useful when
+  manually composing a state the orchestrator can't reach.
+
+Both scripts use Win32 P/Invoke (`SetWindowPos`, `GetWindowRect`,
+`mouse_event`, `keybd_event`) because egui draws into a single
+client-area surface — UI Automation can't see individual buttons /
+tabs / text boxes, so we drive the window by screen coordinates
+relative to the client origin.  Button / tab / search-box positions
+in `orchestrate.ps1` assume the default 1366 × 768 layout; if the
+top-bar widgets shift the offsets need to follow.
+
 ### App Store sandbox compatibility
 
 Resolved in v3.1.6.  Every CLI/GUI write goes through
