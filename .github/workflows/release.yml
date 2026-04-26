@@ -331,17 +331,16 @@ jobs:
             -s -k "" build.keychain
           security find-identity -v build.keychain
 
-      - name: code-sign for DMG (Developer ID)
-        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+      - name: code-sign for DMG (Developer ID, optional)
+        if: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE != '' }}
         run: |
           set -euo pipefail
           identity=$(security find-identity -v build.keychain \
             | grep "Developer ID Application" | head -1 \
-            | sed 's/.*"\(.*\)"/\1/')
+            | sed 's/.*"\(.*\)"/\1/' || true)
           if [ -z "$identity" ]; then
-            echo "ERROR: no Developer ID Application identity found"
-            security find-identity -v build.keychain
-            exit 1
+            echo "WARNING: Developer ID secret was set but no matching identity loaded — DMG will be unsigned"
+            exit 0
           fi
           codesign --force --options runtime \
             --sign "$identity" \
@@ -362,8 +361,8 @@ jobs:
             "rust2xml-${version}-macos-universal.dmg"
           rm -rf "$staging"
 
-      - name: notarize DMG
-        if: ${{ secrets.APPLE_API_KEY_P8 != '' }}
+      - name: notarize DMG (only if Developer ID signed it)
+        if: ${{ secrets.APPLE_API_KEY_P8 != '' && secrets.MACOS_DEVELOPER_ID_CERTIFICATE != '' }}
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
