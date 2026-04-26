@@ -6,7 +6,9 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.8**.
+Ruby gem, written in Rust. Current version: **v3.1.8** — first build to
+clear the Mac App Store binary scan after vendoring a patched `winit`
+to no-op the private CoreGraphics call in `Window::set_blur`.
 
 ## Parity with oddb2xml -e
 
