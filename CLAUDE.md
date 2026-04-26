@@ -6,9 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss drug database XML / DAT files. All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 58 unit tests + 1 integration test pass.
 
-Current released version: **v3.1.5** (GUI now has a per-tab search box that does case-insensitive substring matching across every column of the selected tab — articles / calc / codes / interactions / limitations / products / substances. Switching tabs resets the query, an empty query shows all rows, and the row counter reads `X of Y rows match × N cols` while filtering. The products + articles tabs now resolve `DSCRD`/`DSCRF` via a refdata-first fallback chain (refdata.desc_de → Swissmedic xlsx `sequence_name` → BAG `desc_*` → BAG `name_*`) so brand-name searches like `PONSTAN` / `INDERAL` find rows even in FHIR mode where BAG only carries Marketing-Authorisation names).
+Current released version: **v3.1.6** (every output the CLI and GUI write now lives under `~/rust2xml/`: SQLite snapshots in `~/rust2xml/sqlite/`, XML in `~/rust2xml/xml/`, raw upstream caches in `~/rust2xml/downloads/`. Resolved via `dirs::home_dir()` so the same code path also targets the per-app container under `~/Library/Containers/com.ywesee.rust2xml/Data/` once the Mac App Store sandbox is enabled — no further branching needed. The GUI top panel gained an **📂 Open Data Folder** button that reveals `~/rust2xml/` in Finder / Explorer / `xdg-open`).
 
-Previously: v3.1.4 — release archives ship a macOS `rust2xml-gui.app` bundle with `.icns` icon (generated via `sips` + `iconutil` in the workflow); Linux archives ship `rust2xml-gui.desktop` + `icon.png` + `install-linux.sh` helper; GUI top panel deduplicated — no more in-app "rust2xml 3.1.x" duplicate of the window title — and a clickable app-icon badge in the top-right opens `mailto:zdavatz@ywesee.com`.
+Previously:
+- v3.1.5 — GUI per-tab search box (case-insensitive substring across every column); products + articles `DSCRD`/`DSCRF` resolve via refdata-first fallback chain so brand-name searches like `PONSTAN` find rows in FHIR mode.
+- v3.1.4 — macOS `.app` bundle with `.icns` icon, Linux `.desktop` + `install-linux.sh`, clickable mailto badge.
 
 When bumping the version, keep `Cargo.toml` and `src/version.rs` in sync — they are checked independently and a mismatch will show up in `rust2xml --version`.
 
@@ -197,15 +199,18 @@ MSSTORE_TENANT_ID, MSSTORE_CLIENT_ID, MSSTORE_CLIENT_SECRET
 If the gate variables are unset the matrix build still produces the
 existing five tarballs/zips and the GitHub Release is unchanged.
 
-### App Store sandbox caveat
+### App Store sandbox compatibility
 
-The current `rust2xml-gui` writes to `<cwd>/sqlite/<file>.sqlite`.
-A sandboxed App Store build can only write into the app container
-(`~/Library/Containers/com.ywesee.rust2xml/Data/...`) or to a path
-selected by the user via `NSSavePanel`.  The Developer ID DMG path
-keeps the current behaviour; the Mac App Store `.pkg` will need the
-GUI to either default to the container or expose a save-as picker
-before App Review will accept it.
+Resolved in v3.1.6.  Every CLI/GUI write goes through
+`util::home_data_root()` →
+`dirs::home_dir().join("rust2xml")`.  When the binary is run
+sandboxed under the Mac App Store entitlements, `home_dir()` returns
+`~/Library/Containers/com.ywesee.rust2xml/Data/`, so the same code
+that writes to `~/rust2xml/sqlite/...` on a developer machine writes
+into the per-app container automatically — no `cfg(sandbox)` branch
+needed and no save-panel detour.  The Developer ID DMG path is
+unaffected (the sandbox flag isn't set, `home_dir()` still resolves
+to `~`).
 
 ## Related Rust projects in this workspace
 

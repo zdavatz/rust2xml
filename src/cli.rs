@@ -39,10 +39,8 @@ impl Cli {
         util::save_options(util::GlobalOptions {
             skip_download: self.opts.skip_download,
             log: self.opts.log,
-            work_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            downloads_dir: std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join("downloads"),
+            work_dir: util::home_data_root(),
+            downloads_dir: util::home_downloads_dir(),
         });
         let _ = fs::create_dir_all(util::downloads_dir());
 
@@ -58,14 +56,15 @@ impl Cli {
 
     pub fn run(self) -> Result<Vec<PathBuf>> {
         // Push options into the global holder so util::log / skip_download
-        // work exactly as their Ruby counterparts.
+        // work exactly as their Ruby counterparts.  All output paths
+        // anchor on `~/rust2xml/` (`util::home_data_root()`) so the
+        // sandboxed Mac App Store build writes into its container and
+        // every other build leaves files in one predictable folder.
         util::save_options(util::GlobalOptions {
             skip_download: self.opts.skip_download,
             log: self.opts.log,
-            work_dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            downloads_dir: std::env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join("downloads"),
+            work_dir: util::home_data_root(),
+            downloads_dir: util::home_downloads_dir(),
         });
         let _ = fs::create_dir_all(util::downloads_dir());
 
@@ -88,11 +87,12 @@ impl Cli {
                 if self.opts.calc || self.opts.extended {
                     jobs.push(("oddb_calc.xml", Builder::build_calc));
                 }
+                let xml_dir = util::home_xml_dir();
                 let built: Result<Vec<PathBuf>> = jobs
                     .par_iter()
                     .map(|(name, task)| {
                         let xml = task(&b)?;
-                        let path = PathBuf::from(*name);
+                        let path = xml_dir.join(*name);
                         fs::write(&path, xml)
                             .with_context(|| format!("writing {}", path.display()))?;
                         Ok(path)
@@ -101,7 +101,7 @@ impl Cli {
                 outputs.extend(built?);
             }
             Format::Dat => {
-                let path = PathBuf::from("oddb.dat");
+                let path = util::home_xml_dir().join("oddb.dat");
                 fs::write(&path, b.build_dat())?;
                 outputs.push(path);
             }

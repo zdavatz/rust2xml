@@ -162,10 +162,13 @@ impl GuiApp {
 
         let now = chrono::Local::now();
         let filename = sqlite_export::timestamped_filename(mode.flag(), now);
-        let sqlite_dir = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("sqlite");
-        let sqlite_path = sqlite_dir.join(&filename);
+        // Anchor every write under `~/rust2xml/sqlite/` so the user
+        // always finds output in the same place regardless of where
+        // the GUI was launched from.  In a sandboxed Mac App Store
+        // build, `dirs::home_dir()` returns the per-app container
+        // path automatically, so this is also the sandbox-safe
+        // destination.
+        let sqlite_path = util::home_sqlite_dir().join(&filename);
 
         let _ = tx.send(Event::Log(format!("Starting {} run...", mode.label())));
         let _ = tx.send(Event::Log(format!("Output: {}", sqlite_path.display())));
@@ -432,6 +435,35 @@ impl eframe::App for GuiApp {
                     let ctx_clone = ctx.clone();
                     self.start_run(RunMode::Firstbase, ctx_clone);
                 }
+
+                // "Open Data Folder" — reveals `~/rust2xml/` in the
+                // platform's file manager so the user always knows
+                // where their SQLite snapshots and XML output live.
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("📂 Open Data Folder").size(14.0),
+                        )
+                        .min_size(egui::vec2(180.0, 36.0)),
+                    )
+                    .on_hover_text(format!(
+                        "Open {} in {}",
+                        util::home_data_root().display(),
+                        if cfg!(target_os = "macos") {
+                            "Finder"
+                        } else if cfg!(target_os = "windows") {
+                            "Explorer"
+                        } else {
+                            "your file manager"
+                        }
+                    ))
+                    .clicked()
+                {
+                    if let Err(e) = open_in_file_manager(&util::home_data_root()) {
+                        self.log.push(format!("Open data folder failed: {e}"));
+                    }
+                }
+
                 if running {
                     ui.spinner();
                     ui.label(format!(
@@ -602,6 +634,20 @@ impl eframe::App for GuiApp {
 /// next click).
 fn running_or_progressed(running: bool, progress: f32) -> bool {
     running || progress > 0.0
+}
+
+/// Reveal `path` in the platform's native file manager.  On macOS
+/// uses `open`, on Windows `explorer`, on Linux `xdg-open`.
+fn open_in_file_manager(path: &Path) -> std::io::Result<()> {
+    use std::process::Command;
+    let _ = std::fs::create_dir_all(path);
+    #[cfg(target_os = "macos")]
+    let mut cmd = Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = Command::new("explorer");
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = Command::new("xdg-open");
+    cmd.arg(path).spawn().map(|_| ())
 }
 
 impl Clone for TableData {

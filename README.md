@@ -5,7 +5,7 @@ Swiss drug database XML / DAT generator — pulls from public sources
 and emits a bundle of XML files plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.5**.
+Ruby gem, written in Rust. Current version: **v3.1.6**.
 
 ## Parity with oddb2xml -e
 
@@ -95,8 +95,16 @@ seven XML files:
 - A progress bar reports per-job completion (BAG/FHIR, Refdata,
   Swissmedic, EPha, LPPV, ZurRose, Firstbase) plus the builder + SQLite
   write phases.
-- Output lands at `sqlite/rust2xml_<flag>_HHMM_DD.MM.YYYY.sqlite`
-  relative to the working directory (e.g. `sqlite/rust2xml_e_1430_25.04.2026.sqlite`).
+- Output lands at
+  `~/rust2xml/sqlite/rust2xml_<flag>_HHMM_DD.MM.YYYY.sqlite`
+  (e.g. `~/rust2xml/sqlite/rust2xml_e_1430_25.04.2026.sqlite`).
+  CLI XML output goes to `~/rust2xml/xml/`, raw upstream caches to
+  `~/rust2xml/downloads/`.  The path resolves via
+  `dirs::home_dir()` so a sandboxed Mac App Store build writes into
+  its per-app container automatically.
+- An **📂 Open Data Folder** button next to the run buttons reveals
+  `~/rust2xml/` in Finder / Explorer / `xdg-open` so you always know
+  where the SQLite snapshots and XML output live.
 - After the run, eight tabs (`articles`, `calc`, `codes`,
   `interactions`, `limitations`, `meta`, `products`, `substances`)
   let you browse the data — every column is shown, columns are

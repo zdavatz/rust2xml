@@ -148,6 +148,48 @@ pub fn downloads_dir() -> PathBuf {
     GLOBAL_OPTIONS.lock().downloads_dir.clone()
 }
 
+// --- Home-anchored data directories ---
+//
+// Every output path the GUI / CLI produces lives below `~/rust2xml/`
+// (or `%USERPROFILE%\rust2xml\` on Windows).  Anchoring on the home
+// dir makes the sandboxed Mac App Store build work without changes —
+// `dirs::home_dir()` returns the per-app container under
+// `~/Library/Containers/com.ywesee.rust2xml/Data/` when sandboxed —
+// and it gives the user one predictable folder to back up.
+
+/// `~/rust2xml/` — created on first call.  Falls back to CWD if the
+/// home directory cannot be located (extremely rare; primarily a
+/// safety net for headless CI).
+pub fn home_data_root() -> PathBuf {
+    let root = dirs::home_dir()
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
+        .join("rust2xml");
+    let _ = std::fs::create_dir_all(&root);
+    root
+}
+
+/// `~/rust2xml/sqlite/` — destination for the GUI's SQLite snapshots.
+pub fn home_sqlite_dir() -> PathBuf {
+    let dir = home_data_root().join("sqlite");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// `~/rust2xml/xml/` — destination for the CLI's XML output.
+pub fn home_xml_dir() -> PathBuf {
+    let dir = home_data_root().join("xml");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
+/// `~/rust2xml/downloads/` — cache for raw upstream files (Refdata,
+/// Swissmedic xlsx, FHIR NDJSON, ZurRose ZIP, etc.).
+pub fn home_downloads_dir() -> PathBuf {
+    let dir = home_data_root().join("downloads");
+    let _ = std::fs::create_dir_all(&dir);
+    dir
+}
+
 /// Optional callback invoked alongside stdout for every `log()` line.
 /// Used by the GUI to mirror the download/extract pipeline into its
 /// log panel.  Set to `None` (default) for headless CLI usage.

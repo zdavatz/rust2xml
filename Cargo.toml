@@ -1,6 +1,6 @@
 [package]
 name = "rust2xml"
-version = "3.1.5"
+version = "3.1.6"
 edition = "2021"
 rust-version = "1.75"
 description = "Swiss drug database XML/DAT generator — creates files from swissINDEX, BAG-XML/FHIR and Swissmedic"
@@ -108,6 +108,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Filesystem helpers
 tempfile = "3.13"
 walkdir = "2.5"
+# Cross-platform home dir lookup — sandbox-aware on macOS App Store
+# (returns the per-app container) and resolves to %USERPROFILE% on
+# Windows.
+dirs = "5"
 
 # URL parsing
 url = "2.5"
