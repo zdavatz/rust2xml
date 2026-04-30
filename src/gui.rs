@@ -98,6 +98,12 @@ pub struct GuiApp {
     /// Indices into `table_cache.rows` that the current `search_query`
     /// matches.  Recomputed whenever query or tab changes.
     filtered_rows: Vec<usize>,
+    /// The cell the user last clicked: column name + full value.  When
+    /// `Some`, a detail panel opens between the table and the log so
+    /// long values (German limitation descriptions, JSON-encoded
+    /// `<ARTBAR>`/`<ARTPRI>` arrays, etc.) can be read in full and
+    /// copied with the mouse.
+    selected_cell: Option<(String, String)>,
 }
 
 impl Default for GuiApp {
@@ -117,6 +123,7 @@ impl Default for GuiApp {
             search_query: String::new(),
             last_filter_query: String::new(),
             filtered_rows: Vec::new(),
+            selected_cell: None,
         }
     }
 }
@@ -290,6 +297,7 @@ impl GuiApp {
         // articles/products/limitations/etc., so a stale query is rarely
         // what the user wants.
         self.search_query.clear();
+        self.selected_cell = None;
         let path = match &self.sqlite_path {
             Some(p) => p.clone(),
             None => return,
@@ -524,6 +532,51 @@ impl eframe::App for GuiApp {
             });
         });
 
+        // Cell-detail panel — appears above the log whenever the user
+        // has clicked a cell.  Shows the column name and the full,
+        // un-truncated value with newlines preserved.  Text is
+        // selectable so the value can be copied.
+        if self.selected_cell.is_some() {
+            egui::TopBottomPanel::bottom("cell_detail")
+                .resizable(true)
+                .default_height(160.0)
+                .show(ctx, |ui| {
+                    let (col, val) = self.selected_cell.clone().unwrap();
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Cell:").strong());
+                        ui.monospace(&col);
+                        ui.label(format!("({} chars)", val.chars().count()));
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                if ui.button("✕ Close").clicked() {
+                                    self.selected_cell = None;
+                                }
+                                if ui.button("Copy").clicked() {
+                                    ctx.output_mut(|o| o.copied_text = val.clone());
+                                }
+                            },
+                        );
+                    });
+                    ui.separator();
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            // Use a throwaway buffer so the multiline
+                            // TextEdit (which insists on `&mut String`)
+                            // gives us selection + scrolling without
+                            // actually persisting edits.
+                            let mut buf = val.clone();
+                            ui.add(
+                                egui::TextEdit::multiline(&mut buf)
+                                    .desired_width(f32::INFINITY)
+                                    .desired_rows(6)
+                                    .font(egui::TextStyle::Monospace),
+                            );
+                        });
+                });
+        }
+
         egui::CentralPanel::default().show(ctx, |ui| {
             if self.table_names.is_empty() {
                 ui.centered_and_justified(|ui| {
@@ -601,6 +654,8 @@ impl eframe::App for GuiApp {
                 for _ in &data.columns {
                     tb = tb.column(Column::initial(160.0).at_least(60.0).clip(true).resizable(true));
                 }
+                let columns = data.columns.clone();
+                let mut clicked_cell: Option<(String, String)> = None;
                 tb.header(22.0, |mut header| {
                     for name in &data.columns {
                         header.col(|ui| {
@@ -612,18 +667,30 @@ impl eframe::App for GuiApp {
                     body.rows(18.0, filtered.len(), |mut row| {
                         let row_idx = filtered[row.index()];
                         let r = &data.rows[row_idx];
-                        for value in r {
+                        for (col_idx, value) in r.iter().enumerate() {
                             row.col(|ui| {
-                                ui.add(
-                                    egui::Label::new(value)
-                                        .truncate()
-                                        .selectable(true),
-                                )
-                                .on_hover_text(value);
+                                let resp = ui
+                                    .add(
+                                        egui::Label::new(value)
+                                            .truncate()
+                                            .sense(egui::Sense::click()),
+                                    )
+                                    .on_hover_text(value);
+                                if resp.clicked() {
+                                    let col_name = columns
+                                        .get(col_idx)
+                                        .cloned()
+                                        .unwrap_or_default();
+                                    clicked_cell =
+                                        Some((col_name, value.clone()));
+                                }
                             });
                         }
                     });
                 });
+                if let Some(c) = clicked_cell {
+                    self.selected_cell = Some(c);
+                }
             });
         });
     }

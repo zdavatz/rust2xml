@@ -113,6 +113,11 @@ seven XML files:
   let you browse the data — every column is shown, columns are
   resizable, the table scrolls horizontally for wide records, and
   long cell values truncate with hover-text for the full content.
+- **Click any cell** to open a detail panel above the log showing the
+  full untruncated value (with newlines preserved) plus the column
+  name, character count, and a Copy button.  Useful for reading
+  multi-paragraph German limitation descriptions or copying the
+  flattened price / barcode columns out of the table.
 - A search box above the table does case-insensitive substring
   matching across **every column** of the selected tab.  Each row's
   values are joined into a single lowercased haystack at load time so
