@@ -1,6 +1,6 @@
 [package]
 name = "rust2xml"
-version = "3.1.12"
+version = "3.1.13"
 edition = "2021"
 rust-version = "1.75"
 description = "Swiss Healthcare Public Domain data generator XML, Sqlite, CSV etc. — creates files from swissINDEX, BAG-XML/FHIR and Swissmedic"
@@ -38,7 +38,7 @@ path = "src/lib.rs"
 clap = { version = "4.5", features = ["derive"] }
 
 # HTTP / downloads — replaces `mechanize` + `open-uri` + `rest-client`
-reqwest = { version = "0.12", features = ["blocking", "cookies", "native-tls", "gzip", "json", "stream"], default-features = false }
+reqwest = { version = "0.12", features = ["blocking", "cookies", "rustls-tls", "rustls-tls-native-roots", "gzip", "json", "stream"], default-features = false }
 tokio = { version = "1", features = ["full"] }
 
 # FTP — for ZurRose transfer.dat (pillbox.oddb.org)

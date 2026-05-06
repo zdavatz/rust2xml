@@ -679,7 +679,11 @@ jobs:
   publish:
     name: publish release
     needs: [build, macos-store, windows-msix]
-    if: always() && needs.build.result == 'success'
+    # Publish whatever artifacts uploaded successfully — a single
+    # failed cross-compile target (e.g. aarch64-linux) shouldn't gate
+    # the macOS / Windows / x86_64-linux downloads for end users.
+    # `cancelled()` is the only state we want to block on.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

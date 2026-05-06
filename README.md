@@ -6,9 +6,17 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.12** — surfaces
-the BAG **Indikationscode** (`XXXXX.NN`) *and* its multi-paragraph
-limitation text in the GUI and XML output. v3.1.11 added the
+Ruby gem, written in Rust. Current version: **v3.1.13** — release
+pipeline fixes so end users actually get tarballs on the GitHub
+Releases page.  `reqwest` now uses `rustls-tls` instead of
+`native-tls`, removing the `openssl-sys` cross-compile failure that
+broke the `aarch64-unknown-linux-gnu` build for v3.1.10/v3.1.11/v3.1.12.
+The workflow's `publish` job is also relaxed (`if: !cancelled()`) so
+a single failed cross-compile target no longer blocks the GitHub
+Release for the targets that did build (macOS / Windows / x86_64
+Linux).  Previously v3.1.12 surfaced the BAG **Indikationscode**
+(`XXXXX.NN`) *and* its multi-paragraph limitation text in the GUI
+and XML output. v3.1.11 added the
 `INDIKATIONSCODE` column but the companion text was always empty
 because the CUD parser looked for `indication.extension[limitationText]`
 when the FOPH FHIR feed actually carries it under
@@ -291,19 +299,19 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.12
-git push origin v3.1.12
+git tag v3.1.13
+git push origin v3.1.13
 ```
 
-The current released version is **v3.1.12** — fixes the CUD text
-parsing path (`indication.diseaseSymptomProcedure.concept.text`)
-and adds an `INDIKATIONSCODE_TEXT` column with the limitation text
-per code alongside the `INDIKATIONSCODE` column in the GUI tabs.
-Release archives ship a macOS `rust2xml-gui.app` bundle (with `.icns`
-icon generated via `sips` + `iconutil`) and a Linux `.desktop`
-launcher + icon + installer script.  Bump the patch (`v3.1.13`),
-minor (`v3.2.0`) or major (`v4.0.0`) segment depending on the
-nature of the change.
+The current released version is **v3.1.13** — release-pipeline fixes:
+`reqwest` switched to `rustls-tls` (no more `openssl-sys` cross-compile
+breakage) and the `publish` job now runs whenever the workflow wasn't
+cancelled, so a single failed target no longer blocks the GitHub
+Release.  Release archives ship a macOS `rust2xml-gui.app` bundle
+(with `.icns` icon generated via `sips` + `iconutil`) and a Linux
+`.desktop` launcher + icon + installer script.  Bump the patch
+(`v3.1.14`), minor (`v3.2.0`) or major (`v4.0.0`) segment depending
+on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,
