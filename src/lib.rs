@@ -17,6 +17,7 @@ pub mod downloader;
 pub mod extractor;
 pub mod fhir_support;
 pub mod foph_sl_downloader;
+pub mod indc_xlsx;
 pub mod gui;
 pub mod options;
 pub mod parslet_compositions;

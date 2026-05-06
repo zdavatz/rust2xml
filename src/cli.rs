@@ -107,6 +107,19 @@ impl Cli {
             }
         }
 
+        // Optional BAG Indikationscode XLSX export.  Independent of
+        // the XML/DAT output target; runs against the same Builder.
+        if let Some(path) = self.opts.indc_xlsx.as_deref() {
+            let xlsx_path = std::path::PathBuf::from(path);
+            let n = crate::indc_xlsx::write_indc_xlsx(&b, &xlsx_path)?;
+            util::log(format!(
+                "indc-xlsx: wrote {} rows to {}",
+                n,
+                xlsx_path.display()
+            ));
+            outputs.push(xlsx_path);
+        }
+
         // Optional compression.
         if let Some(ext) = self.opts.compress_ext.as_deref() {
             if let Some(ce) = CompressExt::from_str(ext) {

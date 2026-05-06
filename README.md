@@ -6,15 +6,25 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.13** — release
-pipeline fixes so end users actually get tarballs on the GitHub
-Releases page.  `reqwest` now uses `rustls-tls` instead of
-`native-tls`, removing the `openssl-sys` cross-compile failure that
-broke the `aarch64-unknown-linux-gnu` build for v3.1.10/v3.1.11/v3.1.12.
-The workflow's `publish` job is also relaxed (`if: !cancelled()`) so
-a single failed cross-compile target no longer blocks the GitHub
-Release for the targets that did build (macOS / Windows / x86_64
-Linux).  Previously v3.1.12 surfaced the BAG **Indikationscode**
+Ruby gem, written in Rust. Current version: **v3.1.14** — adds a
+new `--indc-xlsx <PATH>` CLI flag that writes a BAG Indikationscode
+XLSX export to the given path.  One row per (XXXXX.NN code, GTIN)
+pair with eight columns (`Indikationscode`, `Markenname`, `GTIN`,
+`Pack-Beschreibung`, `ATC`, `Preis Ex-Factory`, `Preis Publikum`,
+`Indikation`) ready for browsing/filtering in Excel.  Sorted by
+code, brand, GTIN; header row frozen and bold; the indication
+column wraps so multi-paragraph limitation texts stay readable.
+Implies `--fhir`.  On the live FOPH feed (May 2026) the workbook
+contains 1,419 data rows.  Built on top of the new `rust_xlsxwriter`
+dependency.  v3.1.13 shipped release-pipeline fixes so end users
+actually get tarballs on the GitHub Releases page (`reqwest` now
+uses `rustls-tls` instead of `native-tls`, removing the
+`openssl-sys` cross-compile failure that broke the
+`aarch64-unknown-linux-gnu` build for v3.1.10/v3.1.11/v3.1.12; the
+`publish` job is relaxed via `if: !cancelled()` so a single failed
+cross-compile target no longer blocks the GitHub Release for the
+targets that did build).  Previously v3.1.12 surfaced the BAG
+**Indikationscode**
 (`XXXXX.NN`) *and* its multi-paragraph limitation text in the GUI
 and XML output. v3.1.11 added the
 `INDIKATIONSCODE` column but the companion text was always empty

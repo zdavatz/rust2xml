@@ -58,6 +58,11 @@ pub struct Options {
     pub log: bool,
     pub use_ra11zip: Option<String>,
     pub firstbase: bool,
+    /// Optional path for the BAG Indikationscode XLSX export.  When set,
+    /// rust2xml writes one row per (code, GTIN) pair to this path after
+    /// the normal pipeline finishes.  Requires `fhir` (or `fhir_url`)
+    /// since the codes come from `ClinicalUseDefinition` resources.
+    pub indc_xlsx: Option<String>,
     /// `transfer_dat` — a path passed positionally as the first free arg.
     pub transfer_dat: Option<String>,
 }
@@ -83,6 +88,7 @@ impl Default for Options {
             log: false,
             use_ra11zip: None,
             firstbase: false,
+            indc_xlsx: None,
             transfer_dat: None,
         }
     }
@@ -172,6 +178,13 @@ struct RawArgs {
     #[arg(short = 'b', long = "firstbase", action = ArgAction::SetTrue)]
     firstbase: bool,
 
+    /// Write a BAG Indikationscode export to <PATH> (XLSX). One row per
+    /// (XXXXX.NN code, GTIN) pair with brand name, pack description,
+    /// ATC, ex-factory + public price, and the indication text.
+    /// Requires --fhir.
+    #[arg(long = "indc-xlsx", value_name = "PATH")]
+    indc_xlsx: Option<String>,
+
     /// Positional: optional path to a transfer.dat file.
     #[arg(trailing_var_arg = true)]
     free_args: Vec<String>,
@@ -206,6 +219,7 @@ impl Options {
         opts.log = raw.log;
         opts.use_ra11zip = raw.use_ra11zip;
         opts.firstbase = raw.firstbase;
+        opts.indc_xlsx = raw.indc_xlsx;
 
         if let Some(pct) = raw.increment {
             opts.percent = Some(pct);
@@ -235,6 +249,12 @@ impl Options {
         }
 
         if opts.fhir_url.is_some() {
+            opts.fhir = true;
+        }
+        // The Indikationscode export requires the FHIR feed (CUDs only
+        // exist there).  Implying --fhir lets the user run a one-shot
+        // `rust2xml --indc-xlsx out.xlsx`.
+        if opts.indc_xlsx.is_some() {
             opts.fhir = true;
         }
 

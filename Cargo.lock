@@ -3389,7 +3389,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3694,7 +3694,7 @@ dependencies = [
 
 [[package]]
 name = "rust2xml"
-version = "3.1.13"
+version = "3.1.14"
 dependencies = [
  "anyhow",
  "calamine",
@@ -3725,6 +3725,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "rusqlite",
+ "rust_xlsxwriter",
  "scraper",
  "serde",
  "serde-xml-rs",
@@ -3743,6 +3744,15 @@ dependencies = [
  "walkdir",
  "winresource",
  "wiremock",
+ "zip",
+]
+
+[[package]]
+name = "rust_xlsxwriter"
+version = "0.79.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c743cb9f2a4524676020e26ee5f298445a82d882b09956811b1e78ca7e42b440"
+dependencies = [
  "zip",
 ]
 
