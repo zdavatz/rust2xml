@@ -7,7 +7,9 @@
 //! resources into the same item shape the builder already expects from
 //! `BagXmlExtractor`.
 
-use crate::extractor::{BagItem, BagLimitation, BagPackage, BagPrice, BagPrices, BagSubstance};
+use crate::extractor::{
+    BagIndicationCode, BagItem, BagLimitation, BagPackage, BagPrice, BagPrices, BagSubstance,
+};
 use crate::util;
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -32,12 +34,13 @@ pub struct FhirResource {
     pub classification: Vec<FhirCodeableConcept>,
     #[serde(rename = "productClassification")]
     pub product_classification: Vec<FhirCodeableConcept>,
-    /// RegulatedAuthorization.type — a CodeableConcept used to detect
-    /// Marketing Auth.  In Bundle resources the same field name carries
-    /// a plain string (e.g. `"collection"`), so we deserialize
-    /// leniently and skip values that aren't a struct.
-    #[serde(rename = "type", default, deserialize_with = "deserialize_codeable_concept_lenient")]
-    pub type_field: Option<FhirCodeableConcept>,
+    /// The `type` field has three shapes across resource kinds:
+    /// - Bundle: plain string (`"collection"`)
+    /// - RegulatedAuthorization: CodeableConcept (used to detect Marketing Auth)
+    /// - ClinicalUseDefinition: plain string (`"indication"`, `"contraindication"`, …)
+    /// `FhirType` captures both shapes so each consumer can pick the one it needs.
+    #[serde(rename = "type", default)]
+    pub type_field: FhirType,
     pub ingredient: Vec<FhirIngredient>,
     #[serde(rename = "packagedMedicinalProduct")]
     pub packaged_medicinal_product: Vec<FhirPackagedMedicinalProduct>,
@@ -57,6 +60,9 @@ pub struct FhirResource {
     pub extension: Vec<FhirExtension>,
     /// Used by RegulatedAuthorization to carry limitations under
     /// `indication[].extension[]` in the new FOPH FHIR feed.
+    /// ClinicalUseDefinition uses the singular `indication` (one
+    /// object), so we accept either shape via a tolerant deserializer.
+    #[serde(default, deserialize_with = "deserialize_one_or_many")]
     pub indication: Vec<FhirIndication>,
     pub entry: Vec<FhirBundleEntry>,
 }
@@ -65,6 +71,51 @@ pub struct FhirResource {
 #[serde(default)]
 pub struct FhirIndication {
     pub extension: Vec<FhirExtension>,
+    /// CUD shape: `indication.diseaseSymptomProcedure.concept.text`.
+    #[serde(rename = "diseaseSymptomProcedure")]
+    pub disease_symptom_procedure: Option<FhirCodeableReference>,
+}
+
+/// Deserialize a JSON value that may be either a single object or an
+/// array of objects into a `Vec<T>`.  FHIR uses both shapes in
+/// different places (e.g. RegulatedAuthorization.indication is an
+/// array; ClinicalUseDefinition.indication is a single object).
+fn deserialize_one_or_many<'de, T, D>(d: D) -> std::result::Result<Vec<T>, D::Error>
+where
+    T: serde::de::DeserializeOwned,
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(d)?;
+    match value {
+        serde_json::Value::Null => Ok(Vec::new()),
+        serde_json::Value::Array(_) => {
+            serde_json::from_value(value).map_err(serde::de::Error::custom)
+        }
+        v => {
+            let item: T = serde_json::from_value(v).map_err(serde::de::Error::custom)?;
+            Ok(vec![item])
+        }
+    }
+}
+
+/// FHIR `type` polymorphic shape — string OR CodeableConcept.
+#[derive(Debug, Clone, Default)]
+pub struct FhirType {
+    pub concept: Option<FhirCodeableConcept>,
+    pub text: Option<String>,
+}
+
+impl<'de> serde::Deserialize<'de> for FhirType {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(d)?;
+        let mut out = FhirType::default();
+        match value {
+            serde_json::Value::String(s) => out.text = Some(s),
+            v if v.is_object() => out.concept = serde_json::from_value(v).ok(),
+            _ => {}
+        }
+        Ok(out)
+    }
 }
 
 /// One slot in a Bundle's `entry[]` list — wraps an inner resource.
@@ -341,6 +392,10 @@ impl FhirExtractor {
         // the Marketing Authorisation RA's `identifier[0].value`,
         // following the same logic as oddb.org's `bsv_fhir.rb`.
         let mut no8_for_pack: HashMap<String, String> = HashMap::new();
+        // Indikationscodes per PackagedProductDefinition id.  Built per
+        // bundle by combining FOPHDossierNumber (XXXXX) with each
+        // sibling ClinicalUseDefinition's `.NN` id-suffix.
+        let mut indication_codes_by_pack: HashMap<String, Vec<BagIndicationCode>> = HashMap::new();
 
         for (lineno, line) in self.ndjson.lines().enumerate() {
             if line.trim().is_empty() {
@@ -358,6 +413,15 @@ impl FhirExtractor {
                 vec![&bundle]
             };
 
+            // Bundle-scoped accumulators for Indikationscode (XXXXX.NN)
+            // construction.  FOPHDossierNumber lives on the
+            // reimbursementSL extension of one RegulatedAuthorization;
+            // ClinicalUseDefinitions are siblings.  Both must come from
+            // the same bundle for the join to be meaningful.
+            let mut bundle_dossier: Option<String> = None;
+            let mut bundle_cuds: Vec<(String, String, String)> = Vec::new(); // (id, nn, text)
+            let mut bundle_pack_ids: Vec<String> = Vec::new();
+
             for res in &resources {
                 match res.resource_type.as_str() {
                     "MedicinalProductDefinition" => {
@@ -365,7 +429,12 @@ impl FhirExtractor {
                             medicinal.insert(id, (*res).clone());
                         }
                     }
-                    "PackagedProductDefinition" => packaged.push((*res).clone()),
+                    "PackagedProductDefinition" => {
+                        if let Some(id) = &res.id {
+                            bundle_pack_ids.push(id.clone());
+                        }
+                        packaged.push((*res).clone());
+                    }
                     "Ingredient" => {
                         // `for[].reference` (CHIDMPMedicinalProductDefinition/<id>)
                         // tells us which product this ingredient belongs to.
@@ -403,6 +472,7 @@ impl FhirExtractor {
                         // SwissmedicNo8 for the pack it targets.
                         let is_marketing_auth = res
                             .type_field
+                            .concept
                             .as_ref()
                             .map(|t| {
                                 t.coding.iter().any(|c| {
@@ -439,8 +509,82 @@ impl FhirExtractor {
                                 entry.1.extend(limitations);
                             }
                         }
+                        // FOPHDossierNumber sits under
+                        // extension[reimbursementSL].extension[FOPHDossierNumber].
+                        // It is bundle-scoped: one dossier number per drug.
+                        if bundle_dossier.is_none() {
+                            for ext in &res.extension {
+                                if !ext.url.ends_with("/reimbursementSL") {
+                                    continue;
+                                }
+                                for sub in &ext.extension {
+                                    if sub.url == "FOPHDossierNumber" {
+                                        if let Some(v) = sub
+                                            .value_identifier
+                                            .as_ref()
+                                            .and_then(|id| id.value.clone())
+                                            .filter(|v| !v.is_empty())
+                                        {
+                                            bundle_dossier = Some(v);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "ClinicalUseDefinition" => {
+                        // Indikationscode `.NN` suffix lives in `id`
+                        // (e.g. `CYRAMZA.01`).  We only care about
+                        // `type == "indication"` (skip contraindication,
+                        // interaction, …).
+                        let is_indication = res
+                            .type_field
+                            .text
+                            .as_deref()
+                            .map(|s| s == "indication")
+                            .unwrap_or(false);
+                        if !is_indication {
+                            continue;
+                        }
+                        let id = match &res.id {
+                            Some(s) => s.clone(),
+                            None => continue,
+                        };
+                        let nn = match nn_suffix(&id) {
+                            Some(s) => s,
+                            None => continue,
+                        };
+                        let text = res
+                            .indication
+                            .first()
+                            .and_then(|ind| {
+                                ind.extension
+                                    .iter()
+                                    .find(|e| e.url == "limitationText")
+                                    .and_then(|e| e.value_string.clone())
+                            })
+                            .unwrap_or_default();
+                        bundle_cuds.push((id, nn, text));
                     }
                     _ => {}
+                }
+            }
+
+            // Build XXXXX.NN codes for this bundle and apply to every
+            // pack from the same bundle.
+            if let Some(ref dossier) = bundle_dossier {
+                if !bundle_cuds.is_empty() && !bundle_pack_ids.is_empty() {
+                    let codes: Vec<BagIndicationCode> = bundle_cuds
+                        .iter()
+                        .map(|(cud_id, nn, text)| BagIndicationCode {
+                            code: format!("{}.{}", dossier, nn),
+                            cud_id: cud_id.clone(),
+                            text: text.clone(),
+                        })
+                        .collect();
+                    for pack_id in &bundle_pack_ids {
+                        indication_codes_by_pack.insert(pack_id.clone(), codes.clone());
+                    }
                 }
             }
         }
@@ -656,6 +800,12 @@ impl FhirExtractor {
             package.name_it = item.name_it.clone();
             package.swissmedic_number8 = no8;
             package.sl_entry = true;
+            // Indikationscodes for SL price-model drugs (BAG XXXXX.NN).
+            let pack_id_for_codes = pack.id.clone().unwrap_or_default();
+            if let Some(codes) = indication_codes_by_pack.get(&pack_id_for_codes) {
+                package.indication_codes = codes.clone();
+                item.indication_codes = codes.clone();
+            }
             // Pull prices + limitations from the matching package-level
             // RegulatedAuthorization (extracted in the bundle scan,
             // keyed by PackagedProductDefinition id).
@@ -733,24 +883,6 @@ pub fn merge_translations(
                 }
             }
         }
-    }
-}
-
-/// Accept either a `FhirCodeableConcept` object or any other JSON
-/// value (string, array, …) — used for the `type` field which is
-/// shared between Bundle (string) and RegulatedAuthorization
-/// (CodeableConcept) resources.  Non-objects yield `None`.
-fn deserialize_codeable_concept_lenient<'de, D>(
-    deserializer: D,
-) -> std::result::Result<Option<FhirCodeableConcept>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let value = serde_json::Value::deserialize(deserializer)?;
-    if value.is_object() {
-        Ok(serde_json::from_value(value).ok())
-    } else {
-        Ok(None)
     }
 }
 
@@ -846,6 +978,18 @@ fn parse_price(extensions: &[FhirExtension]) -> (String, String, String, String)
         }
     }
     (code, display, value, date)
+}
+
+/// Extract the `.NN` suffix from a ClinicalUseDefinition `id` like
+/// `CYRAMZA.01` → `Some("01")`.  Returns `None` if the id does not end
+/// with a dot followed by exactly two digits.
+fn nn_suffix(id: &str) -> Option<String> {
+    let (_, tail) = id.rsplit_once('.')?;
+    if tail.len() == 2 && tail.bytes().all(|b| b.is_ascii_digit()) {
+        Some(tail.to_string())
+    } else {
+        None
+    }
 }
 
 fn parse_limitation(extensions: &[FhirExtension]) -> BagLimitation {

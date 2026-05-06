@@ -31,6 +31,9 @@ pub struct BagPackage {
     pub limitation_points: String,
     /// When refdata disagrees with `calc_checksum`, the corrected EAN-13.
     pub correct_ean13: Option<String>,
+    /// Indikationscodes (BAG XXXXX.NN) for SL price-model drugs.
+    #[serde(default)]
+    pub indication_codes: Vec<BagIndicationCode>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -70,6 +73,18 @@ pub struct BagSubstance {
     pub unit: String,
 }
 
+/// Indikationscode (BAG XXXXX.NN) — mandatory on prescriptions and
+/// invoices for SL drugs with a price model from 2026-07-01 (BAG
+/// Rundschreiben 2026-02-19, oddb2xml issue #113).  Built from the
+/// reimbursement RegulatedAuthorization's `FOPHDossierNumber` (XXXXX)
+/// plus the `.NN` suffix of a sibling ClinicalUseDefinition's id.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BagIndicationCode {
+    pub code: String,
+    pub cud_id: String,
+    pub text: String,
+}
+
 /// Normalized preparation produced by `BagXmlExtractor::to_hash`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BagItem {
@@ -94,6 +109,9 @@ pub struct BagItem {
     pub substances: Vec<BagSubstance>,
     pub pharmacodes: Vec<String>,
     pub packages: HashMap<String, BagPackage>,
+    /// Indikationscodes (BAG XXXXX.NN) for SL price-model drugs.
+    #[serde(default)]
+    pub indication_codes: Vec<BagIndicationCode>,
 }
 
 // ------------------------------------------------------------------
@@ -212,6 +230,7 @@ impl BagXmlExtractor {
                         limitations: Vec::new(),
                         limitation_points: String::new(),
                         correct_ean13: None,
+                        indication_codes: Vec::new(),
                     };
 
                     append_limitations(

@@ -36,3 +36,30 @@ fn bag_xml_to_product_xml_contains_sha256_and_name() {
     let substance = builder.build_substance().unwrap();
     assert!(substance.contains("acidum acetylsalicylicum"));
 }
+
+#[test]
+fn fhir_extracts_indikationscodes_from_cyramza_bundle() {
+    use rust2xml::fhir_support::FhirExtractor;
+    use std::collections::HashSet;
+
+    let ndjson = include_str!("fixtures/cyramza.ndjson");
+    let data = FhirExtractor::new(ndjson.to_string()).to_hash().unwrap();
+    assert!(!data.is_empty(), "CYRAMZA fixture should yield at least one item");
+
+    // Expected per BAG Rundschreiben 2026-02-19: FOPHDossierNumber=20403,
+    // CUDs CYRAMZA.01 and CYRAMZA.02 → codes 20403.01, 20403.02.
+    let mut all_codes: HashSet<String> = HashSet::new();
+    for item in data.values() {
+        for ic in &item.indication_codes {
+            all_codes.insert(ic.code.clone());
+        }
+        for pkg in item.packages.values() {
+            // Item-level and package-level lists must agree (same bundle).
+            let pkg_codes: Vec<String> = pkg.indication_codes.iter().map(|c| c.code.clone()).collect();
+            let item_codes: Vec<String> = item.indication_codes.iter().map(|c| c.code.clone()).collect();
+            assert_eq!(pkg_codes, item_codes);
+        }
+    }
+    assert!(all_codes.contains("20403.01"), "expected 20403.01 in {:?}", all_codes);
+    assert!(all_codes.contains("20403.02"), "expected 20403.02 in {:?}", all_codes);
+}

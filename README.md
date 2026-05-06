@@ -6,9 +6,14 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.8** — first build to
-clear the Mac App Store binary scan after vendoring a patched `winit`
-to no-op the private CoreGraphics call in `Window::set_blur`.
+Ruby gem, written in Rust. Current version: **v3.1.9** — extracts the
+BAG **Indikationscode** (`XXXXX.NN`) from FHIR
+`ClinicalUseDefinition` resources by combining each indication's
+`.NN` id-suffix with the SL `FOPHDossierNumber`, and exposes it on
+`BagItem` / `BagPackage` via a new `indication_codes` field. Mandatory
+on prescriptions and invoices for SL price-model drugs from
+2026-07-01 (BAG Rundschreiben 2026-02-19, oddb2xml issue
+[#113](https://github.com/zdavatz/oddb2xml/issues/113)).
 
 ## Parity with oddb2xml -e
 
@@ -269,17 +274,17 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.5
-git push origin v3.1.5
+git tag v3.1.9
+git push origin v3.1.9
 ```
 
-The current released version is **v3.1.5** — adds an in-tab
-search box and a refdata-first fallback chain for article + product
-descriptions.  Release archives ship a macOS `rust2xml-gui.app`
-bundle (with `.icns` icon generated via `sips` + `iconutil`) and a
-Linux `.desktop` launcher + icon + installer script.  Bump the patch
-(`v3.1.6`), minor (`v3.2.0`) or major (`v4.0.0`) segment depending
-on the nature of the change.
+The current released version is **v3.1.9** — extracts the BAG
+**Indikationscode** (`XXXXX.NN`) from FHIR `ClinicalUseDefinition`
+resources for SL price-model drugs.  Release archives ship a macOS
+`rust2xml-gui.app` bundle (with `.icns` icon generated via `sips` +
+`iconutil`) and a Linux `.desktop` launcher + icon + installer
+script.  Bump the patch (`v3.1.10`), minor (`v3.2.0`) or major
+(`v4.0.0`) segment depending on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,
