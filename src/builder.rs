@@ -14,7 +14,8 @@
 
 use crate::calc;
 use crate::extractor::{
-    BagItem, EphaInteraction, FirstbaseItem, RefdataItem, SwissmedicPackage, ZurroseItem,
+    BagIndicationCode, BagItem, EphaInteraction, FirstbaseItem, RefdataItem, SwissmedicPackage,
+    ZurroseItem,
 };
 use crate::options::Options;
 use anyhow::Result;
@@ -190,6 +191,11 @@ impl Builder {
                     if !seen.insert(key) {
                         continue;
                     }
+                    let indikationscodes = if pkg.indication_codes.is_empty() {
+                        join_indication_codes(&item.indication_codes)
+                    } else {
+                        join_indication_codes(&pkg.indication_codes)
+                    };
                     nodes.push(vec![
                         Node::leaf("SwissmedicNo8", pkg.swissmedic_number8.clone()),
                         Node::leaf("GTIN", pkg.ean13.clone()),
@@ -202,6 +208,7 @@ impl Builder {
                         Node::leaf("DSCRF", lim.desc_fr.clone()),
                         Node::leaf("DSCIT", lim.desc_it.clone()),
                         Node::leaf("VDAT", lim.vdate.clone()),
+                        Node::leaf("INDIKATIONSCODE", indikationscodes),
                     ]);
                 }
             }
@@ -416,6 +423,12 @@ impl Builder {
                 item.name_fr.as_str(),
             ]);
 
+            let indikationscodes = item
+                .packages
+                .get(ean13)
+                .map(|p| join_indication_codes(&p.indication_codes))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| join_indication_codes(&item.indication_codes));
             let mut fields: Vec<(String, String)> = vec![
                 ("GTIN".into(), gtin),
                 ("PRODNO".into(), prodno),
@@ -428,6 +441,7 @@ impl Builder {
                 ("EinheitSwissmedic".into(), einheit),
                 ("SubstanceSwissmedic".into(), substance),
                 ("CompositionSwissmedic".into(), composition),
+                ("INDIKATIONSCODE".into(), indikationscodes),
             ];
             if !suffix.is_empty() {
                 for (k, _) in &mut fields {
@@ -471,6 +485,7 @@ impl Builder {
                 ("EinheitSwissmedic".into(), sm.einheit_swissmedic.clone()),
                 ("SubstanceSwissmedic".into(), sm.substance_swissmedic.clone()),
                 ("CompositionSwissmedic".into(), sm.composition_swissmedic.clone()),
+                ("INDIKATIONSCODE".into(), String::new()),
             ];
             if !suffix.is_empty() {
                 for (k, _) in &mut fields {
@@ -539,6 +554,7 @@ impl Builder {
                     smcat: pkg.swissmedic_category.clone(),
                     smno: pkg.swissmedic_number8.clone(),
                     limpts: pkg.limitation_points.clone(),
+                    indikationscodes: join_indication_codes(&pkg.indication_codes),
                 };
                 out.push(nt.into_nodes());
             }
@@ -567,6 +583,7 @@ impl Builder {
                 smcat: String::new(),
                 smno: r.no8.clone(),
                 limpts: String::new(),
+                indikationscodes: String::new(),
             };
             out.push(nt.into_nodes());
         }
@@ -594,6 +611,7 @@ impl Builder {
                 smcat: String::new(),
                 smno: r.no8.clone(),
                 limpts: String::new(),
+                indikationscodes: String::new(),
             };
             out.push(nt.into_nodes());
         }
@@ -615,6 +633,7 @@ impl Builder {
                 smcat: String::new(),
                 smno: String::new(),
                 limpts: String::new(),
+                indikationscodes: String::new(),
             };
             out.push(nt.into_nodes());
         }
@@ -636,6 +655,7 @@ impl Builder {
                 smcat: String::new(),
                 smno: String::new(),
                 limpts: String::new(),
+                indikationscodes: String::new(),
             };
             out.push(nt.into_nodes());
         }
@@ -698,6 +718,9 @@ struct ArtFields {
     smcat: String,
     smno: String,
     limpts: String,
+    /// Comma-joined `XXXXX.NN` BAG Indikationscode list (FHIR-only).
+    /// Empty string for non-FHIR / non-SL articles.
+    indikationscodes: String,
 }
 
 impl ArtFields {
@@ -739,8 +762,24 @@ impl ArtFields {
         if !self.limpts.is_empty() {
             out.push(Node::leaf("LIMPTS", self.limpts));
         }
+        if !self.indikationscodes.is_empty() {
+            out.push(Node::leaf("INDIKATIONSCODE", self.indikationscodes));
+        }
         out
     }
+}
+
+/// Comma-joined `XXXXX.NN` codes (deduped, stable order from the FHIR
+/// bundle).  Empty when the package has no Indikationscode.
+fn join_indication_codes(codes: &[BagIndicationCode]) -> String {
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<&str> = Vec::new();
+    for c in codes {
+        if !c.code.is_empty() && seen.insert(c.code.as_str()) {
+            out.push(c.code.as_str());
+        }
+    }
+    out.join(",")
 }
 
 fn art_prices(

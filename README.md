@@ -6,18 +6,22 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.10** — GUI/CLI
-download UX: the three FHIR language bundles (de/fr/it) now download
-in parallel inside the BAG/FHIR job, `download_as` streams the
-response body in 64 KB chunks and logs progress every 10 MB for
-files ≥ 5 MB, and a new `util::progress_label()` API updates the GUI
-progress bar's caption live during big downloads (FHIR NDJSON,
-Refdata zip, Firstbase CSV) so the bar no longer appears stuck on
-the last completed job's name. Previously **v3.1.9** extracted the
-BAG **Indikationscode** (`XXXXX.NN`) from FHIR `ClinicalUseDefinition`
-resources for SL price-model drugs (mandatory on prescriptions and
-invoices from 2026-07-01 — BAG Rundschreiben 2026-02-19, oddb2xml
-issue [#113](https://github.com/zdavatz/oddb2xml/issues/113)).
+Ruby gem, written in Rust. Current version: **v3.1.11** — surfaces
+the BAG **Indikationscode** (`XXXXX.NN`) in the actual builder output
+that ships to the GUI and XML files. v3.1.9 added the FHIR extraction
+but didn't wire `BagItem.indication_codes` / `BagPackage.indication_codes`
+into the builder, so the codes were parsed and discarded. v3.1.11
+plumbs them through: `<INDIKATIONSCODE>` shows up as a leaf inside
+PRD, ART and LIM elements, and the GUI's **products** / **articles**
+/ **limitations** tabs gain an `INDIKATIONSCODE` column with the
+comma-joined codes per package. Mandatory on prescriptions and
+invoices for SL price-model drugs from 2026-07-01 — BAG Rundschreiben
+2026-02-19, oddb2xml issue
+[#113](https://github.com/zdavatz/oddb2xml/issues/113). v3.1.10
+shipped GUI/CLI download UX (parallel FHIR de/fr/it bundles inside
+the BAG/FHIR job, chunked streaming with 10 MB progress logging for
+files ≥ 5 MB, and a `util::progress_label()` API that updates the
+GUI progress bar's caption live during big downloads).
 
 ## Parity with oddb2xml -e
 
@@ -285,18 +289,19 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.10
-git push origin v3.1.10
+git tag v3.1.11
+git push origin v3.1.11
 ```
 
-The current released version is **v3.1.10** — GUI/CLI download UX:
-parallel FHIR de/fr/it downloads, chunked streaming with 10 MB
-progress logging for files ≥ 5 MB, and a live progress-bar caption
-during the active download.  Release archives ship a macOS
-`rust2xml-gui.app` bundle (with `.icns` icon generated via `sips` +
-`iconutil`) and a Linux `.desktop` launcher + icon + installer
-script.  Bump the patch (`v3.1.11`), minor (`v3.2.0`) or major
-(`v4.0.0`) segment depending on the nature of the change.
+The current released version is **v3.1.11** — wires the BAG
+Indikationscode through the builder so it appears as
+`<INDIKATIONSCODE>` inside PRD/ART/LIM elements and as an
+`INDIKATIONSCODE` column in the GUI's products/articles/limitations
+tabs.  Release archives ship a macOS `rust2xml-gui.app` bundle (with
+`.icns` icon generated via `sips` + `iconutil`) and a Linux `.desktop`
+launcher + icon + installer script.  Bump the patch (`v3.1.12`),
+minor (`v3.2.0`) or major (`v4.0.0`) segment depending on the
+nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:
 1. runs `cargo test --all --release` on Linux,

@@ -63,3 +63,42 @@ fn fhir_extracts_indikationscodes_from_cyramza_bundle() {
     assert!(all_codes.contains("20403.01"), "expected 20403.01 in {:?}", all_codes);
     assert!(all_codes.contains("20403.02"), "expected 20403.02 in {:?}", all_codes);
 }
+
+#[test]
+fn cyramza_bundle_emits_indikationscode_into_product_article_limitation() {
+    use rust2xml::fhir_support::FhirExtractor;
+
+    let ndjson = include_str!("fixtures/cyramza.ndjson");
+    let bag = FhirExtractor::new(ndjson.to_string()).to_hash().unwrap();
+    assert!(!bag.is_empty());
+
+    let inputs = Inputs {
+        bag,
+        release_date: "2026-05-06".into(),
+        ..Default::default()
+    };
+    let builder = Builder::new(Options::default(), inputs);
+
+    let product = builder.build_product().unwrap();
+    assert!(
+        product.contains("<INDIKATIONSCODE>20403.01</INDIKATIONSCODE>")
+            || product.contains("<INDIKATIONSCODE>20403.01,20403.02</INDIKATIONSCODE>")
+            || product.contains("<INDIKATIONSCODE>20403.02,20403.01</INDIKATIONSCODE>"),
+        "PRD missing INDIKATIONSCODE — got: {}",
+        product.lines().filter(|l| l.contains("INDIKATIONSCODE")).collect::<Vec<_>>().join("\n")
+    );
+
+    let article = builder.build_article().unwrap();
+    assert!(
+        article.contains("<INDIKATIONSCODE>20403.01"),
+        "ART missing INDIKATIONSCODE — got: {}",
+        article.lines().filter(|l| l.contains("INDIKATIONSCODE")).collect::<Vec<_>>().join("\n")
+    );
+
+    let lim = builder.build_limitation().unwrap();
+    assert!(
+        lim.contains("<INDIKATIONSCODE>20403."),
+        "LIM missing INDIKATIONSCODE — got: {}",
+        lim.lines().filter(|l| l.contains("INDIKATIONSCODE")).collect::<Vec<_>>().join("\n")
+    );
+}
