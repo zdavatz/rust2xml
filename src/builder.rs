@@ -191,11 +191,13 @@ impl Builder {
                     if !seen.insert(key) {
                         continue;
                     }
-                    let indikationscodes = if pkg.indication_codes.is_empty() {
-                        join_indication_codes(&item.indication_codes)
+                    let codes_src: &[BagIndicationCode] = if pkg.indication_codes.is_empty() {
+                        &item.indication_codes
                     } else {
-                        join_indication_codes(&pkg.indication_codes)
+                        &pkg.indication_codes
                     };
+                    let indikationscodes = join_indication_codes(codes_src);
+                    let indikationscode_text = join_indication_code_texts(codes_src);
                     nodes.push(vec![
                         Node::leaf("SwissmedicNo8", pkg.swissmedic_number8.clone()),
                         Node::leaf("GTIN", pkg.ean13.clone()),
@@ -209,6 +211,7 @@ impl Builder {
                         Node::leaf("DSCIT", lim.desc_it.clone()),
                         Node::leaf("VDAT", lim.vdate.clone()),
                         Node::leaf("INDIKATIONSCODE", indikationscodes),
+                        Node::leaf("INDIKATIONSCODE_TEXT", indikationscode_text),
                     ]);
                 }
             }
@@ -423,12 +426,14 @@ impl Builder {
                 item.name_fr.as_str(),
             ]);
 
-            let indikationscodes = item
+            let pkg_codes = item
                 .packages
                 .get(ean13)
-                .map(|p| join_indication_codes(&p.indication_codes))
+                .map(|p| p.indication_codes.as_slice())
                 .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| join_indication_codes(&item.indication_codes));
+                .unwrap_or(item.indication_codes.as_slice());
+            let indikationscodes = join_indication_codes(pkg_codes);
+            let indikationscode_text = join_indication_code_texts(pkg_codes);
             let mut fields: Vec<(String, String)> = vec![
                 ("GTIN".into(), gtin),
                 ("PRODNO".into(), prodno),
@@ -442,6 +447,7 @@ impl Builder {
                 ("SubstanceSwissmedic".into(), substance),
                 ("CompositionSwissmedic".into(), composition),
                 ("INDIKATIONSCODE".into(), indikationscodes),
+                ("INDIKATIONSCODE_TEXT".into(), indikationscode_text),
             ];
             if !suffix.is_empty() {
                 for (k, _) in &mut fields {
@@ -486,6 +492,7 @@ impl Builder {
                 ("SubstanceSwissmedic".into(), sm.substance_swissmedic.clone()),
                 ("CompositionSwissmedic".into(), sm.composition_swissmedic.clone()),
                 ("INDIKATIONSCODE".into(), String::new()),
+                ("INDIKATIONSCODE_TEXT".into(), String::new()),
             ];
             if !suffix.is_empty() {
                 for (k, _) in &mut fields {
@@ -555,6 +562,7 @@ impl Builder {
                     smno: pkg.swissmedic_number8.clone(),
                     limpts: pkg.limitation_points.clone(),
                     indikationscodes: join_indication_codes(&pkg.indication_codes),
+                    indikationscode_text: join_indication_code_texts(&pkg.indication_codes),
                 };
                 out.push(nt.into_nodes());
             }
@@ -584,6 +592,7 @@ impl Builder {
                 smno: r.no8.clone(),
                 limpts: String::new(),
                 indikationscodes: String::new(),
+                indikationscode_text: String::new(),
             };
             out.push(nt.into_nodes());
         }
@@ -612,6 +621,7 @@ impl Builder {
                 smno: r.no8.clone(),
                 limpts: String::new(),
                 indikationscodes: String::new(),
+                indikationscode_text: String::new(),
             };
             out.push(nt.into_nodes());
         }
@@ -634,6 +644,7 @@ impl Builder {
                 smno: String::new(),
                 limpts: String::new(),
                 indikationscodes: String::new(),
+                indikationscode_text: String::new(),
             };
             out.push(nt.into_nodes());
         }
@@ -656,6 +667,7 @@ impl Builder {
                 smno: String::new(),
                 limpts: String::new(),
                 indikationscodes: String::new(),
+                indikationscode_text: String::new(),
             };
             out.push(nt.into_nodes());
         }
@@ -721,6 +733,9 @@ struct ArtFields {
     /// Comma-joined `XXXXX.NN` BAG Indikationscode list (FHIR-only).
     /// Empty string for non-FHIR / non-SL articles.
     indikationscodes: String,
+    /// Newline-joined `XXXXX.NN: <text>` lines, one per code that
+    /// carries a limitationText.  Empty if no codes have text.
+    indikationscode_text: String,
 }
 
 impl ArtFields {
@@ -765,6 +780,9 @@ impl ArtFields {
         if !self.indikationscodes.is_empty() {
             out.push(Node::leaf("INDIKATIONSCODE", self.indikationscodes));
         }
+        if !self.indikationscode_text.is_empty() {
+            out.push(Node::leaf("INDIKATIONSCODE_TEXT", self.indikationscode_text));
+        }
         out
     }
 }
@@ -780,6 +798,23 @@ fn join_indication_codes(codes: &[BagIndicationCode]) -> String {
         }
     }
     out.join(",")
+}
+
+/// Newline-joined `XXXXX.NN: <limitation text>` lines (deduped by code,
+/// preserves bundle order). Empty if no code carries text.
+fn join_indication_code_texts(codes: &[BagIndicationCode]) -> String {
+    let mut seen = std::collections::HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    for c in codes {
+        if c.code.is_empty() || c.text.is_empty() {
+            continue;
+        }
+        if !seen.insert(c.code.as_str()) {
+            continue;
+        }
+        out.push(format!("{}: {}", c.code, c.text));
+    }
+    out.join("\n")
 }
 
 fn art_prices(

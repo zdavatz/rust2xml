@@ -554,14 +554,25 @@ impl FhirExtractor {
                             Some(s) => s,
                             None => continue,
                         };
+                        // CUD indication text lives at
+                        // `indication.diseaseSymptomProcedure.concept.text`.
+                        // Fall back to the limitationText extension on the
+                        // indication, which is what RA carries (so the same
+                        // path works for either resource shape).
                         let text = res
                             .indication
                             .first()
                             .and_then(|ind| {
-                                ind.extension
-                                    .iter()
-                                    .find(|e| e.url == "limitationText")
-                                    .and_then(|e| e.value_string.clone())
+                                ind.disease_symptom_procedure
+                                    .as_ref()
+                                    .and_then(|ds| ds.concept.as_ref())
+                                    .and_then(|c| c.text.clone())
+                                    .or_else(|| {
+                                        ind.extension
+                                            .iter()
+                                            .find(|e| e.url == "limitationText")
+                                            .and_then(|e| e.value_string.clone())
+                                    })
                             })
                             .unwrap_or_default();
                         bundle_cuds.push((id, nn, text));

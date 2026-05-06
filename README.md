@@ -6,17 +6,19 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.11** — surfaces
-the BAG **Indikationscode** (`XXXXX.NN`) in the actual builder output
-that ships to the GUI and XML files. v3.1.9 added the FHIR extraction
-but didn't wire `BagItem.indication_codes` / `BagPackage.indication_codes`
-into the builder, so the codes were parsed and discarded. v3.1.11
-plumbs them through: `<INDIKATIONSCODE>` shows up as a leaf inside
-PRD, ART and LIM elements, and the GUI's **products** / **articles**
-/ **limitations** tabs gain an `INDIKATIONSCODE` column with the
-comma-joined codes per package. Mandatory on prescriptions and
-invoices for SL price-model drugs from 2026-07-01 — BAG Rundschreiben
-2026-02-19, oddb2xml issue
+Ruby gem, written in Rust. Current version: **v3.1.12** — surfaces
+the BAG **Indikationscode** (`XXXXX.NN`) *and* its multi-paragraph
+limitation text in the GUI and XML output. v3.1.11 added the
+`INDIKATIONSCODE` column but the companion text was always empty
+because the CUD parser looked for `indication.extension[limitationText]`
+when the FOPH FHIR feed actually carries it under
+`indication.diseaseSymptomProcedure.concept.text` (CodeableReference
+shape). v3.1.12 fixes the path and adds an `INDIKATIONSCODE_TEXT`
+column to the **products** / **articles** / **limitations** tabs
+with newline-joined `XXXXX.NN: <text>` entries per code — click-to-
+expand shows the full indication paragraph in the GUI's detail
+panel. Mandatory on prescriptions and invoices for SL price-model
+drugs from 2026-07-01 — BAG Rundschreiben 2026-02-19, oddb2xml issue
 [#113](https://github.com/zdavatz/oddb2xml/issues/113). v3.1.10
 shipped GUI/CLI download UX (parallel FHIR de/fr/it bundles inside
 the BAG/FHIR job, chunked streaming with 10 MB progress logging for
@@ -289,17 +291,17 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.11
-git push origin v3.1.11
+git tag v3.1.12
+git push origin v3.1.12
 ```
 
-The current released version is **v3.1.11** — wires the BAG
-Indikationscode through the builder so it appears as
-`<INDIKATIONSCODE>` inside PRD/ART/LIM elements and as an
-`INDIKATIONSCODE` column in the GUI's products/articles/limitations
-tabs.  Release archives ship a macOS `rust2xml-gui.app` bundle (with
-`.icns` icon generated via `sips` + `iconutil`) and a Linux `.desktop`
-launcher + icon + installer script.  Bump the patch (`v3.1.12`),
+The current released version is **v3.1.12** — fixes the CUD text
+parsing path (`indication.diseaseSymptomProcedure.concept.text`)
+and adds an `INDIKATIONSCODE_TEXT` column with the limitation text
+per code alongside the `INDIKATIONSCODE` column in the GUI tabs.
+Release archives ship a macOS `rust2xml-gui.app` bundle (with `.icns`
+icon generated via `sips` + `iconutil`) and a Linux `.desktop`
+launcher + icon + installer script.  Bump the patch (`v3.1.13`),
 minor (`v3.2.0`) or major (`v4.0.0`) segment depending on the
 nature of the change.
 

@@ -62,6 +62,27 @@ fn fhir_extracts_indikationscodes_from_cyramza_bundle() {
     }
     assert!(all_codes.contains("20403.01"), "expected 20403.01 in {:?}", all_codes);
     assert!(all_codes.contains("20403.02"), "expected 20403.02 in {:?}", all_codes);
+
+    // Each indication code should also carry its CUD limitation text
+    // (read from `indication.diseaseSymptomProcedure.concept.text`).
+    let mut texts: Vec<String> = Vec::new();
+    for item in data.values() {
+        for ic in &item.indication_codes {
+            if !ic.text.is_empty() {
+                texts.push(ic.text.clone());
+            }
+        }
+    }
+    assert!(
+        texts.iter().any(|t| t.contains("Paclitaxel")),
+        "expected CYRAMZA.01 text mentioning Paclitaxel; got texts: {:?}",
+        texts.iter().map(|t| &t[..t.len().min(60)]).collect::<Vec<_>>()
+    );
+    assert!(
+        texts.iter().any(|t| t.contains("FOLFIRI")),
+        "expected CYRAMZA.02 text mentioning FOLFIRI; got texts: {:?}",
+        texts.iter().map(|t| &t[..t.len().min(60)]).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -100,5 +121,17 @@ fn cyramza_bundle_emits_indikationscode_into_product_article_limitation() {
         lim.contains("<INDIKATIONSCODE>20403."),
         "LIM missing INDIKATIONSCODE — got: {}",
         lim.lines().filter(|l| l.contains("INDIKATIONSCODE")).collect::<Vec<_>>().join("\n")
+    );
+
+    // Limitation text per code lands in INDIKATIONSCODE_TEXT.
+    assert!(
+        product.contains("INDIKATIONSCODE_TEXT") && product.contains("Paclitaxel"),
+        "PRD missing INDIKATIONSCODE_TEXT or text — got product slice: {}",
+        product.lines().filter(|l| l.contains("INDIKATIONSCODE")).collect::<Vec<_>>().join("\n")
+    );
+    assert!(
+        article.contains("INDIKATIONSCODE_TEXT") && article.contains("FOLFIRI"),
+        "ART missing INDIKATIONSCODE_TEXT or text — got article slice: {}",
+        article.lines().filter(|l| l.contains("INDIKATIONSCODE")).collect::<Vec<_>>().join("\n")
     );
 }
