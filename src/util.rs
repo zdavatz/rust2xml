@@ -208,16 +208,30 @@ pub fn set_log_sink(sink: Option<LogSink>) {
 pub type ProgressSink = Box<dyn Fn(f32, String) + Send + Sync>;
 
 static PROGRESS_SINK: Lazy<Mutex<Option<ProgressSink>>> = Lazy::new(|| Mutex::new(None));
+static LAST_PROGRESS_FRACTION: Lazy<Mutex<f32>> = Lazy::new(|| Mutex::new(0.0));
 
 /// Install a sink for progress events.  Pass `None` to clear.
 pub fn set_progress_sink(sink: Option<ProgressSink>) {
     *PROGRESS_SINK.lock() = sink;
+    *LAST_PROGRESS_FRACTION.lock() = 0.0;
 }
 
 /// Emit a progress checkpoint.  No-op when no sink is installed.
 pub fn progress(fraction: f32, label: impl Into<String>) {
+    let frac = fraction.clamp(0.0, 1.0);
+    *LAST_PROGRESS_FRACTION.lock() = frac;
     if let Some(sink) = PROGRESS_SINK.lock().as_ref() {
-        sink(fraction.clamp(0.0, 1.0), label.into());
+        sink(frac, label.into());
+    }
+}
+
+/// Update the progress label without moving the bar.  Used by long-running
+/// downloads so the GUI shows live activity (which file, how many MB) while
+/// the underlying job's fraction step hasn't completed yet.
+pub fn progress_label(label: impl Into<String>) {
+    let frac = *LAST_PROGRESS_FRACTION.lock();
+    if let Some(sink) = PROGRESS_SINK.lock().as_ref() {
+        sink(frac, label.into());
     }
 }
 

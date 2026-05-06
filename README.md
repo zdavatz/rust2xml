@@ -6,14 +6,18 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.9** — extracts the
-BAG **Indikationscode** (`XXXXX.NN`) from FHIR
-`ClinicalUseDefinition` resources by combining each indication's
-`.NN` id-suffix with the SL `FOPHDossierNumber`, and exposes it on
-`BagItem` / `BagPackage` via a new `indication_codes` field. Mandatory
-on prescriptions and invoices for SL price-model drugs from
-2026-07-01 (BAG Rundschreiben 2026-02-19, oddb2xml issue
-[#113](https://github.com/zdavatz/oddb2xml/issues/113)).
+Ruby gem, written in Rust. Current version: **v3.1.10** — GUI/CLI
+download UX: the three FHIR language bundles (de/fr/it) now download
+in parallel inside the BAG/FHIR job, `download_as` streams the
+response body in 64 KB chunks and logs progress every 10 MB for
+files ≥ 5 MB, and a new `util::progress_label()` API updates the GUI
+progress bar's caption live during big downloads (FHIR NDJSON,
+Refdata zip, Firstbase CSV) so the bar no longer appears stuck on
+the last completed job's name. Previously **v3.1.9** extracted the
+BAG **Indikationscode** (`XXXXX.NN`) from FHIR `ClinicalUseDefinition`
+resources for SL price-model drugs (mandatory on prescriptions and
+invoices from 2026-07-01 — BAG Rundschreiben 2026-02-19, oddb2xml
+issue [#113](https://github.com/zdavatz/oddb2xml/issues/113)).
 
 ## Parity with oddb2xml -e
 
@@ -102,7 +106,14 @@ seven XML files:
   the FHIR download/parse log streams live in the bottom panel).
 - A progress bar reports per-job completion (BAG/FHIR, Refdata,
   Swissmedic, EPha, LPPV, ZurRose, Firstbase) plus the builder + SQLite
-  write phases.
+  write phases. The bar's caption updates live during the active
+  download (`foph-sl-export-latest-de.ndjson: 30 MB / 89 MB (34%)`)
+  so a long single-file fetch — typically the 90+ MB FHIR NDJSON or
+  the 150 MB Firstbase CSV — never looks like a hang.
+- The three FHIR language bundles (`-de.ndjson` / `-fr.ndjson` /
+  `-it.ndjson`) download + extract in parallel via `rayon` inside the
+  BAG/FHIR job, instead of sequentially DE → FR → IT. DE failure is
+  fatal; FR/IT failures are logged and the run still completes.
 - Output lands at
   `~/rust2xml/sqlite/rust2xml_<flag>_HHMM_DD.MM.YYYY.sqlite`
   (e.g. `~/rust2xml/sqlite/rust2xml_e_1430_25.04.2026.sqlite`).
@@ -274,16 +285,17 @@ tag:
 
 ```sh
 # bump patch version in Cargo.toml + src/version.rs, commit, then:
-git tag v3.1.9
-git push origin v3.1.9
+git tag v3.1.10
+git push origin v3.1.10
 ```
 
-The current released version is **v3.1.9** — extracts the BAG
-**Indikationscode** (`XXXXX.NN`) from FHIR `ClinicalUseDefinition`
-resources for SL price-model drugs.  Release archives ship a macOS
+The current released version is **v3.1.10** — GUI/CLI download UX:
+parallel FHIR de/fr/it downloads, chunked streaming with 10 MB
+progress logging for files ≥ 5 MB, and a live progress-bar caption
+during the active download.  Release archives ship a macOS
 `rust2xml-gui.app` bundle (with `.icns` icon generated via `sips` +
 `iconutil`) and a Linux `.desktop` launcher + icon + installer
-script.  Bump the patch (`v3.1.10`), minor (`v3.2.0`) or major
+script.  Bump the patch (`v3.1.11`), minor (`v3.2.0`) or major
 (`v4.0.0`) segment depending on the nature of the change.
 
 The `.github/workflows/release.yml` pipeline then:

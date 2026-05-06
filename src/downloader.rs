@@ -76,8 +76,54 @@ pub fn download_as<P: AsRef<Path>>(
         anyhow::bail!("HTTP {} fetching {}", resp.status(), url);
     }
 
-    let mut buf: Vec<u8> = Vec::new();
-    resp.read_to_end(&mut buf)?;
+    // Stream the body in chunks so big downloads (FHIR NDJSON, Refdata XML)
+    // can log periodic progress to the GUI log panel — otherwise the run
+    // looks hung while the largest file streams in.
+    let total = resp.content_length();
+    let mut buf: Vec<u8> = Vec::with_capacity(total.unwrap_or(0) as usize);
+    let mut chunk = [0u8; 64 * 1024];
+    let mut last_log_mb: u64 = 0;
+    const MB: u64 = 1024 * 1024;
+    const LOG_EVERY_MB: u64 = 10;
+    const PROGRESS_THRESHOLD: u64 = 5 * MB;
+    loop {
+        let n = resp.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        let mb = buf.len() as u64 / MB;
+        if mb >= last_log_mb + LOG_EVERY_MB {
+            match total {
+                Some(t) if t >= PROGRESS_THRESHOLD => {
+                    let pct = (buf.len() as f64) * 100.0 / (t as f64);
+                    let line = format!(
+                        "  {}: {} MB / {} MB ({:.0}%)",
+                        basename.display(),
+                        mb,
+                        t / MB,
+                        pct
+                    );
+                    util::log(&line);
+                    util::progress_label(line.trim_start().to_string());
+                    last_log_mb = mb;
+                }
+                None => {
+                    let line = format!(
+                        "  {}: {} MB downloaded (no Content-Length)",
+                        basename.display(),
+                        mb
+                    );
+                    util::log(&line);
+                    util::progress_label(line.trim_start().to_string());
+                    last_log_mb = mb;
+                }
+                _ => {
+                    last_log_mb = mb;
+                }
+            }
+        }
+    }
 
     // Write to the caller's path and also seed the downloads/ cache.
     {

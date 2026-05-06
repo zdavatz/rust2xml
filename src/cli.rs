@@ -138,41 +138,49 @@ impl Cli {
         if use_fhir {
             let url = fhir_url.unwrap_or_else(|| DEFAULT_FHIR_URL.to_string());
             jobs.push(("BAG (FHIR de/fr/it)", Box::new(move |store: &Mutex<Inputs>| {
-                // Primary German bundle.
-                let de_d = FhirDownloader::new(url.clone())?;
-                let de_body = de_d.download()?;
-                let de_extractor = FhirExtractor::new(de_body);
-                let mut bag = de_extractor.to_hash()?;
-
-                // FR + IT translations — same URL with the language
-                // suffix swapped.  Failures are logged and ignored so
-                // the run still completes if a language file is down.
+                // Download + extract de/fr/it in parallel.  Failures on fr/it
+                // are logged but ignored; the run still completes from de.
+                let mut langs: Vec<(&'static str, String)> =
+                    vec![("de", url.clone())];
                 for lang in ["fr", "it"] {
                     let lang_url = url.replace("-de.ndjson", &format!("-{lang}.ndjson"));
-                    if lang_url == url {
-                        continue;
+                    if lang_url != url {
+                        langs.push((lang, lang_url));
                     }
-                    let dl = match FhirDownloader::new(lang_url.clone()) {
-                        Ok(d) => d,
-                        Err(e) => {
-                            util::log(format!("FHIR {lang} downloader: {e}"));
-                            continue;
-                        }
-                    };
-                    match dl.download() {
-                        Ok(body) => {
-                            let ext = FhirExtractor::new_with_lang(body, lang);
-                            match ext.to_hash() {
-                                Ok(translation) => {
-                                    crate::fhir_support::merge_translations(
-                                        &mut bag, translation,
-                                    );
-                                }
-                                Err(e) => util::log(format!("FHIR {lang} extract: {e}")),
-                            }
-                        }
-                        Err(e) => util::log(format!("FHIR {lang} download: {e}")),
+                }
+
+                let results: Vec<(&'static str, Result<_>)> = langs
+                    .par_iter()
+                    .map(|(lang, lang_url)| {
+                        let lang = *lang;
+                        let res = (|| {
+                            let dl = FhirDownloader::new(lang_url.clone())?;
+                            let body = dl.download()?;
+                            let ext = if lang == "de" {
+                                FhirExtractor::new(body)
+                            } else {
+                                FhirExtractor::new_with_lang(body, lang)
+                            };
+                            ext.to_hash()
+                        })();
+                        (lang, res)
+                    })
+                    .collect();
+
+                let mut bag = None;
+                let mut translations = Vec::new();
+                for (lang, res) in results {
+                    match res {
+                        Ok(h) if lang == "de" => bag = Some(h),
+                        Ok(h) => translations.push(h),
+                        Err(e) => util::log(format!("FHIR {lang} failed: {e}")),
                     }
+                }
+                let mut bag = bag.ok_or_else(|| {
+                    anyhow::anyhow!("FHIR de bundle download/extract failed")
+                })?;
+                for translation in translations {
+                    crate::fhir_support::merge_translations(&mut bag, translation);
                 }
 
                 store.lock().unwrap().bag.extend(bag);
