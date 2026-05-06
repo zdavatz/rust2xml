@@ -16,7 +16,10 @@ code, brand, GTIN; header row frozen and bold; the indication
 column wraps so multi-paragraph limitation texts stay readable.
 Implies `--fhir`.  On the live FOPH feed (May 2026) the workbook
 contains 1,419 data rows.  Built on top of the new `rust_xlsxwriter`
-dependency.  v3.1.13 shipped release-pipeline fixes so end users
+dependency.  A pre-generated sample lives at
+[`xlsx/indc.xlsx`](xlsx/indc.xlsx) — open it in Excel / LibreOffice
+to browse the codes without running the pipeline.  v3.1.13 shipped
+release-pipeline fixes so end users
 actually get tarballs on the GitHub Releases page (`reqwest` now
 uses `rustls-tls` instead of `native-tls`, removing the
 `openssl-sys` cross-compile failure that broke the
