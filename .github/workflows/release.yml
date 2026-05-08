@@ -583,7 +583,43 @@ jobs:
           $descriptionDe = "Generieren Sie Ihre Produktdaten aus oeffentlich zugaenglichen Schweizer Datenbanken: Swissmedic, BAG, Refdata, Firstbase, Trustbox. Open Source (GPL v3)."
           $descriptionEn = "Generate your product data from the Swiss Public Domain: Swissmedic, BAG, Refdata, Firstbase, Trustbox. Open Source (GPL v3)."
 
-          $createBody = @{
+          # Per Microsoft's submission API, POST /submissions takes no
+          # body — it clones the last published submission verbatim and
+          # returns the cloned object.  All overrides (listings, pricing,
+          # package fileStatus transitions) belong in the subsequent PUT.
+          # Sending a body that drops `applicationPackages` is rejected
+          # once a previous package has been published, with:
+          #   "Please keep all file entries for existing packages.
+          #    If you wish to remove a package, mark it as PendingDelete.
+          #    The following packages are missing in your update: <id>"
+          $subResp = Invoke-RestMethod -Method Post `
+            -Uri "https://manage.devcenter.microsoft.com/v1.0/my/applications/$appId/submissions" `
+            -Headers $headers
+          $subId = $subResp.id
+          $uploadUrl = $subResp.fileUploadUrl
+
+          # Mark every existing package PendingDelete so the new MSIX
+          # fully replaces the previous build.  Keeps the file entries
+          # in the submission (so the API stops complaining) but marks
+          # them for removal at commit time.
+          $existingPackages = @()
+          if ($subResp.applicationPackages) {
+            foreach ($pkg in $subResp.applicationPackages) {
+              $pkg.fileStatus = "PendingDelete"
+              $existingPackages += $pkg
+            }
+          }
+          $existingPackages += @{
+            fileName = $msix.Name
+            fileStatus = "PendingUpload"
+            minimumDirectXVersion = "None"
+            minimumSystemRam = "None"
+          }
+
+          $updateBody = @{
+            targetPublishMode = "Immediate"
+            targetPublishDate = ""
+            visibility = "Public"
             listings = @{
               "de-de" = @{
                 baseListing = @{
@@ -630,35 +666,10 @@ jobs:
             meetAccessibilityGuidelines = $true
             canInstallOnRemovableMedia = $true
             automaticBackupEnabled = $true
-            applicationPackages = @()
+            applicationPackages = $existingPackages
             notesForCertification = "Desktop utility that converts Swiss public-domain drug data into XML / SQLite. Requires internet access. No login. Contact: zdavatz@ywesee.com"
-          } | ConvertTo-Json -Depth 10 -Compress
+          } | ConvertTo-Json -Depth 20 -Compress
 
-          $subResp = Invoke-RestMethod -Method Post `
-            -Uri "https://manage.devcenter.microsoft.com/v1.0/my/applications/$appId/submissions" `
-            -Headers $headers -Body $createBody `
-            -ContentType "application/json; charset=utf-8"
-          $subId = $subResp.id
-          $uploadUrl = $subResp.fileUploadUrl
-
-          $submission = $subResp
-          $submission.targetPublishMode = "Immediate"
-          $submission.targetPublishDate = ""
-          $submission.visibility = "Public"
-          if ($submission.applicationPackages) {
-            foreach ($pkg in $submission.applicationPackages) {
-              $pkg.fileStatus = "PendingDelete"
-            }
-          } else {
-            $submission.applicationPackages = @()
-          }
-          $submission.applicationPackages += @{
-            fileName = $msix.Name
-            fileStatus = "PendingUpload"
-            minimumDirectXVersion = "None"
-            minimumSystemRam = "None"
-          }
-          $updateBody = $submission | ConvertTo-Json -Depth 20 -Compress
           Invoke-RestMethod -Method Put `
             -Uri "https://manage.devcenter.microsoft.com/v1.0/my/applications/$appId/submissions/$subId" `
             -Headers $headers -Body $updateBody `
