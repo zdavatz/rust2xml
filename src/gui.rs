@@ -14,6 +14,7 @@ use egui_extras::{Column, TableBuilder};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 use std::thread;
+use std::time::Instant;
 
 /// Worker → UI events.
 enum Event {
@@ -104,6 +105,14 @@ pub struct GuiApp {
     /// `<ARTBAR>`/`<ARTPRI>` arrays, etc.) can be read in full and
     /// copied with the mouse.
     selected_cell: Option<(String, String)>,
+    /// A run mode the user requested but hasn't been started yet —
+    /// blocked behind the first-time warning dialog.  `None` means no
+    /// pending request.
+    pending_run: Option<RunMode>,
+    /// Wall-clock when the current run started.  Drives the elapsed
+    /// counter shown next to the progress bar so the UI never looks
+    /// frozen during the long ZurRose / FHIR phases.
+    run_started_at: Option<Instant>,
 }
 
 impl Default for GuiApp {
@@ -124,6 +133,8 @@ impl Default for GuiApp {
             last_filter_query: String::new(),
             filtered_rows: Vec::new(),
             selected_cell: None,
+            pending_run: None,
+            run_started_at: None,
         }
     }
 }
@@ -152,6 +163,17 @@ impl GuiApp {
 }
 
 impl GuiApp {
+    /// User clicked one of the run buttons.  Always parks the request
+    /// in `pending_run` so the same code path in `update()` can either
+    /// auto-start (if the warning was already acknowledged) or surface
+    /// the first-time confirmation dialog.
+    fn request_run(&mut self, mode: RunMode) {
+        if self.running_mode.is_some() || self.pending_run.is_some() {
+            return;
+        }
+        self.pending_run = Some(mode);
+    }
+
     fn start_run(&mut self, mode: RunMode, ctx: egui::Context) {
         if self.running_mode.is_some() {
             return;
@@ -159,6 +181,7 @@ impl GuiApp {
         let (tx, rx): (Sender<Event>, Receiver<Event>) = unbounded();
         self.rx = Some(rx);
         self.running_mode = Some(mode);
+        self.run_started_at = Some(Instant::now());
         self.log.clear();
         self.progress = 0.0;
         self.progress_label.clear();
@@ -257,6 +280,7 @@ impl GuiApp {
         if finished {
             self.running_mode = None;
             self.rx = None;
+            self.run_started_at = None;
         }
     }
 
@@ -423,6 +447,100 @@ impl eframe::App for GuiApp {
             ctx.request_repaint_after(std::time::Duration::from_millis(200));
         }
 
+        // Resolve a pending run request: either auto-start (warning was
+        // already acknowledged in a previous session) or surface the
+        // first-time confirmation dialog.  The dialog is shown at most
+        // once per user — clicking "Continue" writes a marker file under
+        // `~/rust2xml/` so subsequent launches skip straight to the run.
+        if let Some(mode) = self.pending_run {
+            if util::gui_warning_acknowledged() {
+                self.pending_run = None;
+                let ctx_clone = ctx.clone();
+                self.start_run(mode, ctx_clone);
+            } else {
+                let mut continue_clicked = false;
+                let mut cancel_clicked = false;
+                egui::Window::new("Before you start")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                    .show(ctx, |ui| {
+                        ui.set_max_width(560.0);
+                        ui.label(RichText::new(format!(
+                            "Run {} — please read first",
+                            mode.label()
+                        ))
+                        .heading());
+                        ui.add_space(6.0);
+                        ui.label(
+                            "This downloads the full Swiss public-domain medication \
+                             dataset from BAG, Swissmedic, Refdata, EPha, LPPV and \
+                             ZurRose / Firstbase, then builds a local SQLite \
+                             database you can browse offline.",
+                        );
+                        ui.add_space(6.0);
+                        ui.label(RichText::new("What to expect").strong());
+                        ui.label("• Total download is roughly 200–300 MB.");
+                        ui.label(
+                            "• On a typical home connection the first run takes \
+                             about 10–30 minutes.  Most of that is the BAG FHIR \
+                             feed (de/fr/it) and the ZurRose pricing file.",
+                        );
+                        ui.label(
+                            "• A live progress bar and log show every step.  \
+                             Subsequent runs reuse cached files and finish in \
+                             seconds.",
+                        );
+                        ui.label(
+                            "• An active internet connection is required.  \
+                             All data is public-domain Swiss federal data.",
+                        );
+                        ui.add_space(8.0);
+                        ui.label(
+                            RichText::new(
+                                "This message is shown only once.  \
+                                 You won't see it again on future launches.",
+                            )
+                            .italics()
+                            .weak(),
+                        );
+                        ui.add_space(10.0);
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Continue").size(14.0),
+                                    )
+                                    .min_size(egui::vec2(120.0, 32.0)),
+                                )
+                                .clicked()
+                            {
+                                continue_clicked = true;
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Cancel").size(14.0),
+                                    )
+                                    .min_size(egui::vec2(120.0, 32.0)),
+                                )
+                                .clicked()
+                            {
+                                cancel_clicked = true;
+                            }
+                        });
+                    });
+                if continue_clicked {
+                    util::mark_gui_warning_acknowledged();
+                    self.pending_run = None;
+                    let ctx_clone = ctx.clone();
+                    self.start_run(mode, ctx_clone);
+                } else if cancel_clicked {
+                    self.pending_run = None;
+                }
+            }
+        }
+
         self.ensure_icon_texture(ctx);
 
         egui::TopBottomPanel::top("controls").show(ctx, |ui| {
@@ -433,15 +551,13 @@ impl eframe::App for GuiApp {
                     .add_enabled(!running, egui::Button::new(RichText::new("Run -e (Extended)").size(16.0)).min_size(egui::vec2(220.0, 36.0)))
                     .clicked()
                 {
-                    let ctx_clone = ctx.clone();
-                    self.start_run(RunMode::Extended, ctx_clone);
+                    self.request_run(RunMode::Extended);
                 }
                 if ui
                     .add_enabled(!running, egui::Button::new(RichText::new("Run -b (Firstbase)").size(16.0)).min_size(egui::vec2(220.0, 36.0)))
                     .clicked()
                 {
-                    let ctx_clone = ctx.clone();
-                    self.start_run(RunMode::Firstbase, ctx_clone);
+                    self.request_run(RunMode::Firstbase);
                 }
 
                 // "Open Data Folder" — reveals `~/rust2xml/` in the
@@ -474,9 +590,14 @@ impl eframe::App for GuiApp {
 
                 if running {
                     ui.spinner();
+                    let elapsed = self
+                        .run_started_at
+                        .map(|t| t.elapsed().as_secs())
+                        .unwrap_or(0);
                     ui.label(format!(
-                        "Running {}...",
-                        self.running_mode.unwrap().label()
+                        "Running {} — elapsed {}",
+                        self.running_mode.unwrap().label(),
+                        format_elapsed(elapsed)
                     ));
                 }
 
@@ -701,6 +822,20 @@ impl eframe::App for GuiApp {
 /// next click).
 fn running_or_progressed(running: bool, progress: f32) -> bool {
     running || progress > 0.0
+}
+
+/// Render an elapsed-seconds counter as `MM:SS` (or `HH:MM:SS` past the
+/// one-hour mark).  Drives the live "elapsed Xm Ys" label in the top
+/// panel so the UI never looks frozen during long downloads.
+fn format_elapsed(seconds: u64) -> String {
+    let h = seconds / 3600;
+    let m = (seconds % 3600) / 60;
+    let s = seconds % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m:02}:{s:02}")
+    }
 }
 
 /// Reveal `path` in the platform's native file manager.  On macOS

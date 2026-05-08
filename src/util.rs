@@ -190,6 +190,22 @@ pub fn home_downloads_dir() -> PathBuf {
     dir
 }
 
+/// Marker file written when the user has acknowledged the GUI's
+/// pre-download warning.  Presence ⇒ skip the dialog on subsequent
+/// runs (across restarts).  Plain empty file under the data root so
+/// removing `~/rust2xml/` resets the consent.
+fn gui_warning_ack_path() -> PathBuf {
+    home_data_root().join(".gui_warning_ack")
+}
+
+pub fn gui_warning_acknowledged() -> bool {
+    gui_warning_ack_path().exists()
+}
+
+pub fn mark_gui_warning_acknowledged() {
+    let _ = std::fs::write(gui_warning_ack_path(), b"");
+}
+
 /// Optional callback invoked alongside stdout for every `log()` line.
 /// Used by the GUI to mirror the download/extract pipeline into its
 /// log panel.  Set to `None` (default) for headless CLI usage.
