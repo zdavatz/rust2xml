@@ -63,6 +63,13 @@ pub struct BagLimitation {
     pub desc_it: String,
     pub vdate: String,
     pub del: bool,
+    /// FHIR-only: id of the ClinicalUseDefinition referenced by the
+    /// limitation extension's `limitationIndication`.  The actual
+    /// limitation text lives on that CUD's
+    /// `indication.diseaseSymptomProcedure.concept.text`; we resolve
+    /// it per bundle for DE and via the same id for FR/IT.
+    #[serde(default)]
+    pub cud_ref: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -329,6 +336,7 @@ fn append_limitations(
                 desc_it: lim.DescriptionIt.clone().unwrap_or_default(),
                 vdate: lim.ValidFromDate.clone().unwrap_or_default(),
                 del: deleted,
+                cud_ref: String::new(),
             });
         }
     };

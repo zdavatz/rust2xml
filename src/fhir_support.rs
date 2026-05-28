@@ -152,6 +152,11 @@ pub struct FhirExtension {
     pub value_period: Option<FhirPeriod>,
     #[serde(rename = "valueMoney")]
     pub value_money: Option<FhirMoney>,
+    /// Carries a reference to another FHIR resource — used by the
+    /// `limitationIndication` sub-extension to point at the
+    /// ClinicalUseDefinition that holds the actual limitation text.
+    #[serde(rename = "valueReference")]
+    pub value_reference: Option<FhirReference>,
     pub extension: Vec<FhirExtension>,
 }
 
@@ -421,6 +426,10 @@ impl FhirExtractor {
             let mut bundle_dossier: Option<String> = None;
             let mut bundle_cuds: Vec<(String, String, String)> = Vec::new(); // (id, nn, text)
             let mut bundle_pack_ids: Vec<String> = Vec::new();
+            // All `type == "indication"` CUDs of this bundle by id (with
+            // or without `.NN` suffix).  Used to resolve limitation text
+            // for the `limitationIndication` reference on RegulatedAuth.
+            let mut bundle_cud_texts: HashMap<String, String> = HashMap::new();
 
             for res in &resources {
                 match res.resource_type.as_str() {
@@ -550,10 +559,6 @@ impl FhirExtractor {
                             Some(s) => s.clone(),
                             None => continue,
                         };
-                        let nn = match nn_suffix(&id) {
-                            Some(s) => s,
-                            None => continue,
-                        };
                         // CUD indication text lives at
                         // `indication.diseaseSymptomProcedure.concept.text`.
                         // Fall back to the limitationText extension on the
@@ -575,7 +580,17 @@ impl FhirExtractor {
                                     })
                             })
                             .unwrap_or_default();
-                        bundle_cuds.push((id, nn, text));
+                        // Index every indication CUD by id, regardless
+                        // of `.NN` suffix — limitations may reference
+                        // CUDs without one (e.g. `NORDIMET`, `VOTUBIA4`).
+                        if !text.is_empty() {
+                            bundle_cud_texts.insert(id.clone(), text.clone());
+                        }
+                        // Indikationscode (XXXXX.NN) construction still
+                        // requires the `.NN` suffix.
+                        if let Some(nn) = nn_suffix(&id) {
+                            bundle_cuds.push((id, nn, text));
+                        }
                     }
                     _ => {}
                 }
@@ -595,6 +610,27 @@ impl FhirExtractor {
                         .collect();
                     for pack_id in &bundle_pack_ids {
                         indication_codes_by_pack.insert(pack_id.clone(), codes.clone());
+                    }
+                }
+            }
+
+            // Resolve limitation texts via the per-bundle CUD map.  The
+            // live BAG FHIR feed never carries `limitationText` inline;
+            // limitations only hold a `limitationIndication` reference
+            // whose target ClinicalUseDefinition holds the actual text.
+            // Bundle-scoped, so this must run after all CUDs of the
+            // bundle are known.
+            if !bundle_cud_texts.is_empty() {
+                for pack_id in &bundle_pack_ids {
+                    if let Some((_, limitations)) = sl_data.get_mut(pack_id) {
+                        for lim in limitations.iter_mut() {
+                            if lim.cud_ref.is_empty() || !lim.desc_de.is_empty() {
+                                continue;
+                            }
+                            if let Some(text) = bundle_cud_texts.get(&lim.cud_ref) {
+                                lim.desc_de = text.clone();
+                            }
+                        }
                     }
                 }
             }
@@ -859,9 +895,10 @@ impl FhirExtractor {
 }
 
 /// Merge FR/IT limitation translations into a primary (DE) extraction.
-/// Matches packages by EAN-13 and limitations by index — every
-/// language file derives from the same SL source so the per-package
-/// limitation list is in the same order across languages.
+/// Matches packages by EAN-13.  Limitations are matched by
+/// `cud_ref` first (the BAG FHIR feed always references the same
+/// ClinicalUseDefinition id across languages, only the text differs)
+/// and fall back to positional index if the ref is absent.
 pub fn merge_translations(
     primary: &mut HashMap<String, BagItem>,
     translation: HashMap<String, BagItem>,
@@ -884,13 +921,23 @@ pub fn merge_translations(
                 de_item.name_it = t_item.name_it.clone();
             }
             for (idx, t_lim) in t_pkg.limitations.into_iter().enumerate() {
-                if let Some(de_lim) = de_pkg.limitations.get_mut(idx) {
-                    if !t_lim.desc_fr.is_empty() {
-                        de_lim.desc_fr = t_lim.desc_fr;
-                    }
-                    if !t_lim.desc_it.is_empty() {
-                        de_lim.desc_it = t_lim.desc_it;
-                    }
+                let de_lim = if !t_lim.cud_ref.is_empty() {
+                    de_pkg
+                        .limitations
+                        .iter_mut()
+                        .find(|l| l.cud_ref == t_lim.cud_ref)
+                } else {
+                    de_pkg.limitations.get_mut(idx)
+                };
+                let de_lim = match de_lim {
+                    Some(x) => x,
+                    None => continue,
+                };
+                if !t_lim.desc_fr.is_empty() {
+                    de_lim.desc_fr = t_lim.desc_fr;
+                }
+                if !t_lim.desc_it.is_empty() {
+                    de_lim.desc_it = t_lim.desc_it;
                 }
             }
         }
@@ -1007,8 +1054,27 @@ fn parse_limitation(extensions: &[FhirExtension]) -> BagLimitation {
     let mut lim = BagLimitation::default();
     for e in extensions {
         match e.url.as_str() {
+            // Forward-compat: the live BAG feed doesn't carry the
+            // limitation text inline (see `limitationIndication` below),
+            // but older / mock feeds sometimes did.
             "limitationText" => {
                 lim.desc_de = e.value_string.clone().unwrap_or_default();
+            }
+            "limitationIndication" => {
+                // Reference shape: "ClinicalUseDefinition/<id>".  We
+                // store the bare id; the bundle pass resolves the
+                // actual text per language.
+                if let Some(ref_field) = e
+                    .value_reference
+                    .as_ref()
+                    .and_then(|r| r.reference.as_deref())
+                {
+                    lim.cud_ref = ref_field
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(ref_field)
+                        .to_string();
+                }
             }
             "statusDate" => {
                 lim.vdate = e.value_date.clone().unwrap_or_default();

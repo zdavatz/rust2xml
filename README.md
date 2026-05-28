@@ -6,7 +6,18 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.14** — adds a
+Ruby gem, written in Rust. Current version: **v3.1.17** — fixes empty
+`DSCRD` / `DSCRF` / `DSCRI` on every `<Limitation>` in `oddb_limitation.xml`
+under `--fhir`. The live BAG FHIR feed does not carry limitation text
+inline; the `regulatedAuthorization-limitation` extension only holds a
+`limitationIndication` reference to a `ClinicalUseDefinition` whose
+`indication.diseaseSymptomProcedure.concept.text` is the actual text
+(one per language). The parser now captures the reference, resolves DE
+from the same bundle's CUDs, and merges FR/IT from the per-language
+NDJSON bundles by the same CUD id. Coverage on the live FOPH feed
+jumped from 0/5,963 (0%) to 5,963/5,963 (100%). Aligned with
+oddb2xml 3.0.8 — see issue
+[#116](https://github.com/zdavatz/oddb2xml/issues/116). v3.1.14 added a
 new `--indc-xlsx <PATH>` CLI flag that writes a BAG Indikationscode
 XLSX export to the given path.  One row per (XXXXX.NN code, GTIN)
 pair with eight columns (`Indikationscode`, `Markenname`, `GTIN`,

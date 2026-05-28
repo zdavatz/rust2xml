@@ -86,6 +86,118 @@ fn fhir_extracts_indikationscodes_from_cyramza_bundle() {
 }
 
 #[test]
+fn cyramza_fhir_fills_limitation_descriptions_in_all_three_languages() {
+    use rust2xml::fhir_support::{merge_translations, FhirExtractor};
+    use serde_json::Value;
+    use std::collections::HashMap;
+
+    let ndjson = include_str!("fixtures/cyramza.ndjson");
+
+    // The live BAG FHIR feed never stores limitation text inline, only a
+    // reference to a ClinicalUseDefinition whose `concept.text` differs
+    // per language.  We rewrite the CUD text of the bundle for each
+    // language, feed it through the extractor as the per-language
+    // NDJSON file, and merge.
+    fn variant(src: &str, lang_texts: &HashMap<&str, &str>) -> String {
+        let mut bundle: Value = serde_json::from_str(src).unwrap();
+        for entry in bundle["entry"].as_array_mut().unwrap() {
+            let res = &mut entry["resource"];
+            if res["resourceType"] != "ClinicalUseDefinition" {
+                continue;
+            }
+            let id = res["id"].as_str().unwrap_or("").to_string();
+            if let Some(new_text) = lang_texts.get(id.as_str()) {
+                res["indication"]["diseaseSymptomProcedure"]["concept"]["text"] =
+                    Value::String((*new_text).into());
+            }
+        }
+        serde_json::to_string(&bundle).unwrap()
+    }
+
+    let fr_text_01 = "FR limitation pour CYRAMZA.01";
+    let fr_text_02 = "FR limitation pour CYRAMZA.02";
+    let it_text_01 = "IT limitazione per CYRAMZA.01";
+    let it_text_02 = "IT limitazione per CYRAMZA.02";
+
+    let mut merged = FhirExtractor::new_with_lang(ndjson.to_string(), "de")
+        .to_hash()
+        .unwrap();
+
+    // Sanity: DE limitation text was resolved from the CUD reference.
+    let de_pkg = merged
+        .values()
+        .next()
+        .unwrap()
+        .packages
+        .values()
+        .next()
+        .unwrap()
+        .clone();
+    assert!(
+        !de_pkg.limitations.is_empty(),
+        "DE pass must produce limitations"
+    );
+    let de_refs: Vec<String> = de_pkg.limitations.iter().map(|l| l.cud_ref.clone()).collect();
+    assert!(
+        de_refs.iter().any(|r| r == "CYRAMZA.01"),
+        "cud_ref CYRAMZA.01: {:?}",
+        de_refs
+    );
+    assert!(
+        de_refs.iter().any(|r| r == "CYRAMZA.02"),
+        "cud_ref CYRAMZA.02: {:?}",
+        de_refs
+    );
+    let de_texts: Vec<String> = de_pkg.limitations.iter().map(|l| l.desc_de.clone()).collect();
+    assert!(
+        de_texts.iter().any(|t| t.contains("Paclitaxel")),
+        "DescDe should resolve via CUD ref; got {:?}",
+        de_texts
+    );
+
+    // Build FR + IT variants and merge.
+    let fr_map: HashMap<&str, &str> = [
+        ("CYRAMZA.01", fr_text_01),
+        ("CYRAMZA.02", fr_text_02),
+    ]
+    .into_iter()
+    .collect();
+    let it_map: HashMap<&str, &str> = [
+        ("CYRAMZA.01", it_text_01),
+        ("CYRAMZA.02", it_text_02),
+    ]
+    .into_iter()
+    .collect();
+
+    let fr = FhirExtractor::new_with_lang(variant(ndjson, &fr_map), "fr")
+        .to_hash()
+        .unwrap();
+    let it = FhirExtractor::new_with_lang(variant(ndjson, &it_map), "it")
+        .to_hash()
+        .unwrap();
+
+    merge_translations(&mut merged, fr);
+    merge_translations(&mut merged, it);
+
+    let pkg = merged.values().next().unwrap().packages.values().next().unwrap();
+    let by_ref: HashMap<&str, &rust2xml::extractor::BagLimitation> = pkg
+        .limitations
+        .iter()
+        .map(|l| (l.cud_ref.as_str(), l))
+        .collect();
+
+    let l01 = by_ref.get("CYRAMZA.01").expect("CYRAMZA.01 limitation");
+    let l02 = by_ref.get("CYRAMZA.02").expect("CYRAMZA.02 limitation");
+
+    assert_eq!(l01.desc_fr, fr_text_01);
+    assert_eq!(l02.desc_fr, fr_text_02);
+    assert_eq!(l01.desc_it, it_text_01);
+    assert_eq!(l02.desc_it, it_text_02);
+    // DE text survives the merge.
+    assert!(l01.desc_de.contains("Paclitaxel"));
+}
+
+#[test]
 fn cyramza_bundle_emits_indikationscode_into_product_article_limitation() {
     use rust2xml::fhir_support::FhirExtractor;
 
