@@ -70,6 +70,13 @@ pub struct BagLimitation {
     /// it per bundle for DE and via the same id for FR/IT.
     #[serde(default)]
     pub cud_ref: String,
+    /// FHIR-only: the explicit BAG Indikationscode (XXXXX.NN) carried on
+    /// the limitation extension's `indicationCode` sub-extension (BAG SL
+    /// FHIR export >= v2.0.5).  The BAG changelog states this is
+    /// independent of the CUD id, so it is read directly rather than
+    /// reconstructed from FOPHDossierNumber + the CUD id suffix.
+    #[serde(default)]
+    pub indication_code: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -337,6 +344,7 @@ fn append_limitations(
                 vdate: lim.ValidFromDate.clone().unwrap_or_default(),
                 del: deleted,
                 cud_ref: String::new(),
+                indication_code: String::new(),
             });
         }
     };

@@ -596,24 +596,6 @@ impl FhirExtractor {
                 }
             }
 
-            // Build XXXXX.NN codes for this bundle and apply to every
-            // pack from the same bundle.
-            if let Some(ref dossier) = bundle_dossier {
-                if !bundle_cuds.is_empty() && !bundle_pack_ids.is_empty() {
-                    let codes: Vec<BagIndicationCode> = bundle_cuds
-                        .iter()
-                        .map(|(cud_id, nn, text)| BagIndicationCode {
-                            code: format!("{}.{}", dossier, nn),
-                            cud_id: cud_id.clone(),
-                            text: text.clone(),
-                        })
-                        .collect();
-                    for pack_id in &bundle_pack_ids {
-                        indication_codes_by_pack.insert(pack_id.clone(), codes.clone());
-                    }
-                }
-            }
-
             // Resolve limitation texts via the per-bundle CUD map.  The
             // live BAG FHIR feed never carries `limitationText` inline;
             // limitations only hold a `limitationIndication` reference
@@ -631,6 +613,45 @@ impl FhirExtractor {
                                 lim.desc_de = text.clone();
                             }
                         }
+                    }
+                }
+            }
+
+            // Build Indikationscodes for this bundle and apply per pack.
+            // Prefer the explicit `indicationCode` carried on each
+            // limitation (BAG feed >= v2.0.5).  The BAG changelog states
+            // the limitation code (CUD id) and the indication code are
+            // independent, so XXXXX.NN must NOT be reconstructed from the
+            // CUD id suffix.  Fall back to that derivation only for older
+            // feeds lacking the extension.  Runs after text resolution so
+            // each code carries its resolved DE limitation text.
+            for pack_id in &bundle_pack_ids {
+                let from_ext: Vec<BagIndicationCode> = sl_data
+                    .get(pack_id)
+                    .map(|(_, lims)| {
+                        lims.iter()
+                            .filter(|l| !l.indication_code.is_empty())
+                            .map(|l| BagIndicationCode {
+                                code: l.indication_code.clone(),
+                                cud_id: l.cud_ref.clone(),
+                                text: l.desc_de.clone(),
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if !from_ext.is_empty() {
+                    indication_codes_by_pack.insert(pack_id.clone(), from_ext);
+                } else if let Some(ref dossier) = bundle_dossier {
+                    if !bundle_cuds.is_empty() {
+                        let codes: Vec<BagIndicationCode> = bundle_cuds
+                            .iter()
+                            .map(|(cud_id, nn, text)| BagIndicationCode {
+                                code: format!("{}.{}", dossier, nn),
+                                cud_id: cud_id.clone(),
+                                text: text.clone(),
+                            })
+                            .collect();
+                        indication_codes_by_pack.insert(pack_id.clone(), codes);
                     }
                 }
             }
@@ -961,7 +982,7 @@ fn extract_sl_data(extensions: &[FhirExtension]) -> (BagPrices, Vec<BagLimitatio
         match ext.url.as_str() {
             "http://fhir.ch/ig/ch-epl/StructureDefinition/regulatedAuthorization-limitation" => {
                 let lim = parse_limitation(&ext.extension);
-                if !lim.desc_de.is_empty() || !lim.r#type.is_empty() {
+                if !lim.desc_de.is_empty() || !lim.r#type.is_empty() || !lim.indication_code.is_empty() {
                     limitations.push(lim);
                 }
             }
@@ -989,7 +1010,7 @@ fn extract_sl_data(extensions: &[FhirExtension]) -> (BagPrices, Vec<BagLimitatio
                         // — handle that path too.
                         "http://fhir.ch/ig/ch-epl/StructureDefinition/regulatedAuthorization-limitation" => {
                             let lim = parse_limitation(&sub.extension);
-                            if !lim.desc_de.is_empty() || !lim.r#type.is_empty() {
+                            if !lim.desc_de.is_empty() || !lim.r#type.is_empty() || !lim.indication_code.is_empty() {
                                 limitations.push(lim);
                             }
                         }
@@ -1059,6 +1080,11 @@ fn parse_limitation(extensions: &[FhirExtension]) -> BagLimitation {
             // but older / mock feeds sometimes did.
             "limitationText" => {
                 lim.desc_de = e.value_string.clone().unwrap_or_default();
+            }
+            "indicationCode" => {
+                // Authoritative BAG Indikationscode XXXXX.NN (feed >= v2.0.5),
+                // independent of the CUD id — read directly, never derived.
+                lim.indication_code = e.value_string.clone().unwrap_or_default();
             }
             "limitationIndication" => {
                 // Reference shape: "ClinicalUseDefinition/<id>".  We

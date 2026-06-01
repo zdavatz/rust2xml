@@ -46,8 +46,9 @@ fn fhir_extracts_indikationscodes_from_cyramza_bundle() {
     let data = FhirExtractor::new(ndjson.to_string()).to_hash().unwrap();
     assert!(!data.is_empty(), "CYRAMZA fixture should yield at least one item");
 
-    // Expected per BAG Rundschreiben 2026-02-19: FOPHDossierNumber=20403,
-    // CUDs CYRAMZA.01 and CYRAMZA.02 → codes 20403.01, 20403.02.
+    // Expected per BAG Rundschreiben 2026-02-19: the explicit
+    // `indicationCode` extension on each limitation carries 20403.01 /
+    // 20403.02 (read directly, not reconstructed from the CUD id suffix).
     let mut all_codes: HashSet<String> = HashSet::new();
     for item in data.values() {
         for ic in &item.indication_codes {
@@ -83,6 +84,53 @@ fn fhir_extracts_indikationscodes_from_cyramza_bundle() {
         "expected CYRAMZA.02 text mentioning FOLFIRI; got texts: {:?}",
         texts.iter().map(|t| &t[..t.len().min(60)]).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn fhir_uses_explicit_indication_code_not_dossier_suffix_derivation() {
+    use rust2xml::fhir_support::FhirExtractor;
+    use serde_json::Value;
+    use std::collections::HashSet;
+
+    // The BAG changelog (>= v2.0.5) states the limitation code (CUD id) and
+    // the indication code are independent.  Rewrite the explicit
+    // `indicationCode` values so they no longer match FOPHDossierNumber +
+    // CUD suffix, and confirm the extractor surfaces the explicit values.
+    let ndjson = include_str!("fixtures/cyramza.ndjson");
+    let mut bundle: Value = serde_json::from_str(ndjson).unwrap();
+    for entry in bundle["entry"].as_array_mut().unwrap() {
+        let res = &mut entry["resource"];
+        if res["resourceType"] != "RegulatedAuthorization" {
+            continue;
+        }
+        let Some(inds) = res["indication"].as_array_mut() else { continue };
+        for ind in inds {
+            let Some(exts) = ind["extension"].as_array_mut() else { continue };
+            for ext in exts {
+                if !ext["url"].as_str().unwrap_or("").contains("regulatedAuthorization-limitation") {
+                    continue;
+                }
+                let Some(subs) = ext["extension"].as_array_mut() else { continue };
+                for sub in subs {
+                    if sub["url"] == "indicationCode" {
+                        sub["valueString"] = Value::String("99999.77".into());
+                    }
+                }
+            }
+        }
+    }
+    let rewritten = serde_json::to_string(&bundle).unwrap();
+    let data = FhirExtractor::new(rewritten).to_hash().unwrap();
+
+    let mut all_codes: HashSet<String> = HashSet::new();
+    for item in data.values() {
+        for ic in &item.indication_codes {
+            all_codes.insert(ic.code.clone());
+        }
+    }
+    assert!(all_codes.contains("99999.77"), "expected explicit 99999.77 in {:?}", all_codes);
+    assert!(!all_codes.contains("20403.01"), "must not re-derive 20403.01: {:?}", all_codes);
+    assert!(!all_codes.contains("20403.02"), "must not re-derive 20403.02: {:?}", all_codes);
 }
 
 #[test]
