@@ -224,7 +224,8 @@ including optimist's auto-assigned short flags:
 | `--artikelstamm` | | Create Artikelstamm v3/v5 for Elexis ≥ 3.1 |
 | `--compress-ext <FMT>` | `-c` | `tar.gz` or `zip` |
 | `--extended` | `-e` | Pharma + non-pharma + ZurRose + `oddb_calc.xml` |
-| `--fhir` | | Use FOPH/BAG FHIR NDJSON feed |
+| `--fhir` | | Use FOPH/BAG FHIR NDJSON feed (default ON for `-e`/`-b` since 01.06.2026) |
+| `--no-fhir` | | Use the legacy SL XML instead (opt out of the `-e`/`-b` FHIR default) |
 | `--fhir-url <URL>` | | Custom FHIR NDJSON URL (implies `--fhir`) |
 | `--format <FMT>` | `-f` | `xml` (default) or `dat` |
 | `--include` | `-i` | EAN14 for `dat` format |
@@ -241,8 +242,8 @@ including optimist's auto-assigned short flags:
 
 Implied-flag cascade (same behaviour as Ruby):
 - `--increment N` → sets `nonpharma`, `price=zurrose`, `ean14=true`, `percent=N`
-- `--firstbase` → sets `nonpharma`, `calc`
-- `--extended` → sets `nonpharma`, `price=zurrose`, `calc`
+- `--firstbase` → sets `nonpharma`, `calc`, and (since 01.06.2026) `fhir` unless `--no-fhir`
+- `--extended` → sets `nonpharma`, `price=zurrose`, `calc`, and (since 01.06.2026) `fhir` unless `--no-fhir`
 - `--artikelstamm` → sets `extended`, `price=zurrose`
 - `--fhir-url` → sets `fhir`
 - `-f xml` → forces `ean14=true`

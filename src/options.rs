@@ -122,9 +122,14 @@ struct RawArgs {
     #[arg(short = 'e', long = "extended", action = ArgAction::SetTrue)]
     extended: bool,
 
-    /// Use FHIR NDJSON from FOPH/BAG instead of SL XML
+    /// Use FHIR NDJSON from FOPH/BAG instead of SL XML.
+    /// Default ON for -e/--extended and -b/--firstbase since June 2026.
     #[arg(long = "fhir", action = ArgAction::SetTrue)]
     fhir: bool,
+
+    /// Use the legacy SL XML instead of FHIR NDJSON (opt out of the -e/-b FHIR default)
+    #[arg(long = "no-fhir", action = ArgAction::SetTrue)]
+    no_fhir: bool,
 
     /// Specific FHIR NDJSON URL (implies --fhir)
     #[arg(long = "fhir-url", value_name = "URL")]
@@ -258,6 +263,12 @@ impl Options {
             opts.fhir = true;
         }
 
+        // From June 2026, -e/--extended and -b/--firstbase default to the
+        // FHIR (FOPH/BAG NDJSON) source. Opt out with --no-fhir.
+        if (opts.extended || opts.firstbase) && !raw.fhir && !raw.no_fhir {
+            opts.fhir = true;
+        }
+
         // --price overrides anything set above.
         if let Some(p) = raw.price.as_deref() {
             opts.price = Some(p.parse()?);
@@ -382,6 +393,29 @@ mod tests {
         let o = Options::parse(["--fhir-url", "https://example.com/x.ndjson"]).unwrap();
         assert!(o.fhir);
         assert_eq!(o.fhir_url.as_deref(), Some("https://example.com/x.ndjson"));
+    }
+
+    #[test]
+    fn extended_defaults_to_fhir() {
+        assert!(Options::parse(["--extended"]).unwrap().fhir);
+        assert!(Options::parse(["-e"]).unwrap().fhir);
+    }
+
+    #[test]
+    fn firstbase_defaults_to_fhir() {
+        assert!(Options::parse(["--firstbase"]).unwrap().fhir);
+        assert!(Options::parse(["-b"]).unwrap().fhir);
+    }
+
+    #[test]
+    fn no_fhir_opts_out_of_extended_default() {
+        assert!(!Options::parse(["--extended", "--no-fhir"]).unwrap().fhir);
+        assert!(!Options::parse(["--firstbase", "--no-fhir"]).unwrap().fhir);
+    }
+
+    #[test]
+    fn plain_run_stays_non_fhir() {
+        assert!(!Options::parse([] as [&str; 0]).unwrap().fhir);
     }
 
     #[test]
