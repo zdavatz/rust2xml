@@ -295,3 +295,101 @@ fn cyramza_bundle_emits_indikationscode_into_product_article_limitation() {
         article.lines().filter(|l| l.contains("INDIKATIONSCODE")).collect::<Vec<_>>().join("\n")
     );
 }
+
+#[test]
+fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
+    use rust2xml::extractor::swissmedic::SwissmedicPackage;
+    use rust2xml::fhir_support::FhirExtractor;
+
+    // CYRAMZA bundle → BAG items (packages carry SL prices, limitations
+    // with an explicit BAG Indikationscode, and limitation text).
+    let ndjson = include_str!("fixtures/cyramza.ndjson");
+    let bag = FhirExtractor::new(ndjson.to_string()).to_hash().unwrap();
+    assert!(!bag.is_empty(), "CYRAMZA fixture should yield items");
+
+    // Feed a synthetic Swissmedic pack for the first BAG package so the
+    // <PRODUCTS> / <LIMITATIONS> paths (keyed on PRODNO) get exercised.
+    let (pkg_ean, no8) = {
+        let item = bag.values().next().unwrap();
+        let pkg = item.packages.values().next().unwrap();
+        (pkg.ean13.clone(), pkg.swissmedic_number8.clone())
+    };
+    let mut swissmedic_packages = std::collections::HashMap::new();
+    swissmedic_packages.insert(
+        no8.clone(),
+        SwissmedicPackage {
+            no8: no8.clone(),
+            ean13: pkg_ean.clone(),
+            prodno: "9999901".into(),
+            swissmedic_category: "A".into(),
+            atc_code: "L01XC21".into(),
+            package_size: "1".into(),
+            einheit_swissmedic: "Stück".into(),
+            sequence_name: "CYRAMZA Test".into(),
+            ..Default::default()
+        },
+    );
+
+    let inputs = Inputs {
+        bag,
+        swissmedic_packages,
+        release_date: "2026-07-01".into(),
+        ..Default::default()
+    };
+    let builder = Builder::new(Options::default(), inputs);
+
+    let xml = builder.build_artikelstamm(6).unwrap();
+    assert!(
+        xml.contains("http://elexis.ch/Elexis_Artikelstamm_v6"),
+        "v6 namespace missing"
+    );
+    assert!(xml.contains("DATA_SOURCE=\"oddb2xml\""), "DATA_SOURCE attr missing");
+    assert!(xml.contains("<PRODUCTS>") && xml.contains("<ITEMS>") && xml.contains("<LIMITATIONS>"));
+    assert!(xml.contains("<PRODNO>9999901</PRODNO>"), "PRODUCT PRODNO missing");
+    // Limitations must be present: FHIR carries no native LIMCD, so the CUD id
+    // (cud_ref) is used as <LIMNAMEBAG>.  A populated <LIMITATION> with its
+    // German text proves the fallback works end-to-end.
+    assert!(xml.contains("<LIMITATION>"), "no <LIMITATION> emitted");
+    assert!(
+        !xml.contains("<LIMNAMEBAG></LIMNAMEBAG>") && !xml.contains("<LIMNAMEBAG/>"),
+        "empty <LIMNAMEBAG> — cud_ref fallback not applied"
+    );
+    assert!(
+        xml.contains(&format!("<GTIN>{}</GTIN>", pkg_ean)),
+        "pack GTIN missing from ITEMS"
+    );
+    // v6 ARTSL block with the explicit BAG Indikationscode.
+    assert!(xml.contains("<ARTSL>") && xml.contains("<PM>true</PM>"), "ARTSL missing");
+    assert!(
+        xml.contains("<INDCD>20403.01</INDCD>") || xml.contains("<INDCD>20403.02</INDCD>"),
+        "ARTSL INDCD missing — got: {}",
+        xml.lines().filter(|l| l.contains("INDCD")).collect::<Vec<_>>().join("\n")
+    );
+
+    // Legacy v5 switches the namespace and drops <ARTSL> entirely.
+    let xml5 = builder.build_artikelstamm(5).unwrap();
+    assert!(xml5.contains("http://elexis.ch/Elexis_Artikelstamm_v5"), "v5 namespace missing");
+    assert!(!xml5.contains("<ARTSL>"), "v5 must not contain <ARTSL>");
+
+    // Companion CSV has the header and at least the pack row.
+    let csv = builder.artikelstamm_csv();
+    assert!(csv.starts_with("gtin,name,pkg_size,galenic_form"), "CSV header missing");
+    assert!(csv.contains(&pkg_ean), "CSV missing pack row");
+
+    // Validate against the committed v6 XSD when xmllint is available
+    // (skipped silently on hosts without libxml2-utils, e.g. bare CI).
+    let path = std::env::temp_dir().join("rust2xml_artikelstamm_v6_test.xml");
+    std::fs::write(&path, &xml).unwrap();
+    if let Ok(out) = std::process::Command::new("xmllint")
+        .args(["--noout", "--schema", "Elexis_Artikelstamm_v6.xsd"])
+        .arg(&path)
+        .output()
+    {
+        assert!(
+            out.status.success(),
+            "generated XML failed v6 XSD validation:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+    let _ = std::fs::remove_file(&path);
+}

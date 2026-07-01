@@ -5,6 +5,7 @@
 
 pub mod version;
 
+pub mod artikelstamm;
 pub mod bag_fhir_extractor;
 pub mod builder;
 pub mod calc;

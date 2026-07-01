@@ -56,7 +56,7 @@ fn joined_text(children: &[Node]) -> String {
     children.iter().map(Node::text).collect::<Vec<_>>().join("")
 }
 
-fn write_node(writer: &mut Writer<Cursor<Vec<u8>>>, node: &Node) -> Result<()> {
+pub(crate) fn write_node(writer: &mut Writer<Cursor<Vec<u8>>>, node: &Node) -> Result<()> {
     match node {
         Node::Leaf(tag, text) => {
             writer.write_event(Event::Start(BytesStart::new(tag.as_str())))?;
@@ -789,7 +789,7 @@ impl ArtFields {
 
 /// Comma-joined `XXXXX.NN` codes (deduped, stable order from the FHIR
 /// bundle).  Empty when the package has no Indikationscode.
-fn join_indication_codes(codes: &[BagIndicationCode]) -> String {
+pub(crate) fn join_indication_codes(codes: &[BagIndicationCode]) -> String {
     let mut seen = std::collections::HashSet::new();
     let mut out: Vec<&str> = Vec::new();
     for c in codes {
@@ -843,7 +843,7 @@ fn art_prices(
 /// 100 mg") or a Swissmedic unit ("Tablette(n)").  Returns (form,
 /// group, oid_string).  Empty strings when nothing matches — Ruby does
 /// the same.
-fn galenic_for(desc: &str, unit: &str) -> (String, String, String) {
+pub(crate) fn galenic_for(desc: &str, unit: &str) -> (String, String, String) {
     let candidates = [desc, unit];
     for hay in candidates {
         let hay = hay.trim();
@@ -881,7 +881,7 @@ fn flat(pairs: Vec<(String, String)>) -> Vec<Node> {
 /// Return the first non-empty candidate as an owned `String`.  Used to
 /// pick a description from a fallback chain (refdata → Swissmedic xlsx
 /// → BAG/FHIR).
-fn first_non_empty(candidates: &[&str]) -> String {
+pub(crate) fn first_non_empty(candidates: &[&str]) -> String {
     for c in candidates {
         if !c.is_empty() {
             return (*c).to_string();

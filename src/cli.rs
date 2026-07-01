@@ -99,6 +99,34 @@ impl Cli {
                     })
                     .collect();
                 outputs.extend(built?);
+
+                // Elexis Artikelstamm v6 (+ companion CSV) for `-as` /
+                // `--artikelstamm`.  Bespoke three-section shape, dated
+                // filename (`artikelstamm_DDMMYYYY_v6.xml`).
+                if self.opts.artikelstamm {
+                    // v6 (default) plus, when --artikelstamm-v5 is set, the
+                    // legacy v5 (no <ARTSL>).  The companion CSV is identical
+                    // across versions, so it's written once per version.
+                    let mut versions: Vec<u8> = vec![6];
+                    if self.opts.artikelstamm_v5 {
+                        versions.push(5);
+                    }
+                    for version in versions {
+                        let xml = b.build_artikelstamm(version)?;
+                        let xml_path = xml_dir
+                            .join(format!("artikelstamm_v{version}.xml"));
+                        fs::write(&xml_path, xml)
+                            .with_context(|| format!("writing {}", xml_path.display()))?;
+                        outputs.push(xml_path);
+
+                        let csv = b.artikelstamm_csv();
+                        let csv_path = xml_dir
+                            .join(format!("artikelstamm_v{version}.csv"));
+                        fs::write(&csv_path, csv)
+                            .with_context(|| format!("writing {}", csv_path.display()))?;
+                        outputs.push(csv_path);
+                    }
+                }
             }
             Format::Dat => {
                 let path = util::home_xml_dir().join("oddb.dat");

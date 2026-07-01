@@ -42,6 +42,9 @@ impl std::str::FromStr for PriceSource {
 pub struct Options {
     pub nonpharma: bool,
     pub artikelstamm: bool,
+    /// Additionally emit the legacy Artikelstamm v5 (no `<ARTSL>`).
+    /// Additive to `artikelstamm` — mirrors oddb2xml's `--artikelstamm-v5`.
+    pub artikelstamm_v5: bool,
     pub compress_ext: Option<String>,
     pub extended: bool,
     pub fhir: bool,
@@ -72,6 +75,7 @@ impl Default for Options {
         Options {
             nonpharma: false,
             artikelstamm: false,
+            artikelstamm_v5: false,
             compress_ext: None,
             extended: false,
             fhir: false,
@@ -108,9 +112,14 @@ struct RawArgs {
     #[arg(short = 'a', long = "append", action = ArgAction::SetTrue)]
     append: bool,
 
-    /// Create Artikelstamm v3 and v5 for Elexis >= 3.1
+    /// Create Artikelstamm v6 for Elexis >= 3.1
     #[arg(long = "artikelstamm", action = ArgAction::SetTrue)]
     artikelstamm: bool,
+
+    /// Additionally create the legacy Artikelstamm v5 (without the
+    /// <ARTSL> BAG indication codes). Implies --artikelstamm.
+    #[arg(long = "artikelstamm-v5", action = ArgAction::SetTrue)]
+    artikelstamm_v5: bool,
 
     /// Compression format: tar.gz | zip
     #[arg(short = 'c', long = "compress-ext", value_name = "FMT")]
@@ -212,6 +221,7 @@ impl Options {
         let mut opts = Options::default();
 
         opts.artikelstamm = raw.artikelstamm;
+        opts.artikelstamm_v5 = raw.artikelstamm_v5;
         opts.compress_ext = raw.compress_ext;
         opts.extended = raw.extended;
         opts.fhir = raw.fhir;
@@ -246,6 +256,11 @@ impl Options {
             opts.nonpharma = true;
             opts.price = Some(PriceSource::ZurRose);
             opts.calc = true;
+        }
+
+        // --artikelstamm-v5 is additive: it needs the full artikelstamm build.
+        if opts.artikelstamm_v5 {
+            opts.artikelstamm = true;
         }
 
         if opts.artikelstamm {
@@ -378,6 +393,16 @@ mod tests {
     fn long_only_artikelstamm() {
         let o = Options::parse(["--artikelstamm"]).unwrap();
         assert!(o.artikelstamm);
+        assert!(!o.artikelstamm_v5, "v5 stays off unless requested");
+        assert!(o.extended, "artikelstamm implies extended");
+        assert_eq!(o.price, Some(PriceSource::ZurRose));
+    }
+
+    #[test]
+    fn artikelstamm_v5_implies_artikelstamm() {
+        let o = Options::parse(["--artikelstamm-v5"]).unwrap();
+        assert!(o.artikelstamm_v5);
+        assert!(o.artikelstamm, "v5 implies the full artikelstamm build");
         assert!(o.extended, "artikelstamm implies extended");
         assert_eq!(o.price, Some(PriceSource::ZurRose));
     }
