@@ -82,7 +82,7 @@ pub(crate) fn write_node(writer: &mut Writer<Cursor<Vec<u8>>>, node: &Node) -> R
 }
 
 /// All the data the builder needs to produce one run of output.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Inputs {
     pub bag: HashMap<String, BagItem>,
     pub refdata_pharma: HashMap<String, RefdataItem>,

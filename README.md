@@ -218,6 +218,14 @@ Each run creates a fresh timestamped file; old runs stay on disk.
 - `artikelstamm_v5.xml` + `artikelstamm_v5.csv` (when `--artikelstamm-v5`) —
   legacy v5 shape (no `<ARTSL>`); validates against `Elexis_Artikelstamm_v5.xsd`
 
+By default the Artikelstamm carries only German (`<DSCR>`) and French
+(`<DSCRF>`) descriptions — the strict upstream Elexis v6/v5 XSD (the one
+the Elexis importer validates against) has no `<DSCRI>` element, so
+emitting Italian would make the import fail with
+`cvc-complex-type.2.4.a`. Pass `-it` / `--italian` to additionally emit
+the Italian `<DSCRI>` leaves (for consumers using the oddb2xml-extended
+XSD).
+
 The `artikelstamm_*` files carry **no** `SHA256` attribute (matching
 oddb2xml). Every top-level element in the `oddb_*.xml` files carries a
 `SHA256` attribute whose
@@ -234,6 +242,7 @@ including optimist's auto-assigned short flags:
 | `--append` | `-a` | Additional target nonpharma |
 | `--artikelstamm` | | Create Elexis Artikelstamm v6 (`artikelstamm_v6.xml` + `.csv`) |
 | `--artikelstamm-v5` | | Additionally emit the legacy v5 (no `<ARTSL>`); implies `--artikelstamm` |
+| `--italian` (`--it`) | | Include the Italian `<DSCRI>` in the Artikelstamm (off by default; strict Elexis XSD has no `<DSCRI>`) |
 | `--compress-ext <FMT>` | `-c` | `tar.gz` or `zip` |
 | `--extended` | `-e` | Pharma + non-pharma + ZurRose + `oddb_calc.xml` |
 | `--fhir` | | Use FOPH/BAG FHIR NDJSON feed (default ON for `-e`/`-b` since 01.06.2026) |

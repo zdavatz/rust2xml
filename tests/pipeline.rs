@@ -426,6 +426,7 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
         release_date: "2026-07-01".into(),
         ..Default::default()
     };
+    let inputs_it = inputs.clone();
     let builder = Builder::new(Options::default(), inputs);
 
     let xml = builder.build_artikelstamm(6).unwrap();
@@ -456,10 +457,29 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
         xml.lines().filter(|l| l.contains("INDCD")).collect::<Vec<_>>().join("\n")
     );
 
+    // By default (no --italian) the strict Elexis XSD applies: only DE + FR
+    // descriptions, never <DSCRI> — emitting it makes the Elexis importer
+    // reject the file with cvc-complex-type.2.4.a.
+    assert!(
+        !xml.contains("<DSCRI>"),
+        "default output must not carry <DSCRI> (strict Elexis XSD)"
+    );
+
     // Legacy v5 switches the namespace and drops <ARTSL> entirely.
     let xml5 = builder.build_artikelstamm(5).unwrap();
     assert!(xml5.contains("http://elexis.ch/Elexis_Artikelstamm_v5"), "v5 namespace missing");
     assert!(!xml5.contains("<ARTSL>"), "v5 must not contain <ARTSL>");
+    assert!(!xml5.contains("<DSCRI>"), "v5 default must not carry <DSCRI>");
+
+    // Opting in with --italian re-adds the Italian description leaves.
+    let mut it_opts = Options::default();
+    it_opts.italian = true;
+    let builder_it = Builder::new(it_opts, inputs_it);
+    let xml_it = builder_it.build_artikelstamm(6).unwrap();
+    assert!(
+        xml_it.contains("<DSCRI>"),
+        "--italian output must carry <DSCRI>"
+    );
 
     // Companion CSV has the header and at least the pack row.
     let csv = builder.artikelstamm_csv();

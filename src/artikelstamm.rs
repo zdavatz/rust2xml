@@ -14,6 +14,14 @@
 //!
 //! A companion `artikelstamm_DDMMYYYY_v6.csv` is emitted alongside the
 //! XML (`Builder::artikelstamm_csv`), mirroring the Ruby CSV.
+//!
+//! By default the items/products/limitations carry only the German
+//! (`<DSCR>`) and French (`<DSCRF>`) descriptions.  The Italian
+//! description (`<DSCRI>`) is emitted only when `opts.italian` is set
+//! (`-it` / `--italian`): the strict upstream Elexis v6/v5 XSD that the
+//! Elexis importer validates against has no `<DSCRI>` element, so
+//! emitting it unconditionally makes the import fail with a
+//! `cvc-complex-type.2.4.a` error (see `medindex_first_v6.xml`).
 
 use crate::builder::{first_non_empty, galenic_for, Builder, Node};
 use crate::extractor::{BagItem, BagPackage};
@@ -186,7 +194,7 @@ impl Builder {
                 nodes.push(Node::leaf("SALECD", "A"));
                 nodes.push(Node::leaf("DSCR", dscr));
                 nodes.push(Node::leaf("DSCRF", dscrf));
-                if !dscri.is_empty() {
+                if self.opts.italian && !dscri.is_empty() {
                     nodes.push(Node::leaf("DSCRI", dscri));
                 }
                 if !atc.is_empty() {
@@ -274,7 +282,7 @@ impl Builder {
                     Node::leaf("DSCR", lim.desc_de.clone()),
                     Node::leaf("DSCRF", lim.desc_fr.clone()),
                 ];
-                if !lim.desc_it.is_empty() {
+                if self.opts.italian && !lim.desc_it.is_empty() {
                     nodes.push(Node::leaf("DSCRI", lim.desc_it.clone()));
                 }
                 nodes.push(Node::leaf("LIMITATION_PTS", pts));
@@ -406,7 +414,7 @@ impl Builder {
         nodes.push(Node::leaf("SALECD", "A"));
         nodes.push(Node::leaf("DSCR", dscr));
         nodes.push(Node::leaf("DSCRF", dscrf));
-        if !dscri.is_empty() {
+        if self.opts.italian && !dscri.is_empty() {
             nodes.push(Node::leaf("DSCRI", dscri));
         }
 
@@ -579,7 +587,7 @@ impl Builder {
         nodes.push(Node::leaf("SALECD", salecd));
         nodes.push(Node::leaf("DSCR", dscr));
         nodes.push(Node::leaf("DSCRF", dscrf));
-        if !dscri.is_empty() {
+        if self.opts.italian && !dscri.is_empty() {
             nodes.push(Node::leaf("DSCRI", dscri));
         }
         if let Some(r) = refdata {

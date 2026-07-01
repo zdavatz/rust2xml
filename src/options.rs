@@ -45,6 +45,13 @@ pub struct Options {
     /// Additionally emit the legacy Artikelstamm v5 (no `<ARTSL>`).
     /// Additive to `artikelstamm` — mirrors oddb2xml's `--artikelstamm-v5`.
     pub artikelstamm_v5: bool,
+    /// Emit the Italian-language description leaves (`<DSCRI>`) in the
+    /// Artikelstamm.  Off by default: the strict upstream Elexis v6/v5 XSD
+    /// (the one the Elexis importer actually validates against) has no
+    /// `<DSCRI>` element, so emitting it makes the import fail with a
+    /// `cvc-complex-type.2.4.a` error.  Enable with `-it` / `--italian`
+    /// only when the consumer uses the oddb2xml-extended XSD.
+    pub italian: bool,
     pub compress_ext: Option<String>,
     pub extended: bool,
     pub fhir: bool,
@@ -76,6 +83,7 @@ impl Default for Options {
             nonpharma: false,
             artikelstamm: false,
             artikelstamm_v5: false,
+            italian: false,
             compress_ext: None,
             extended: false,
             fhir: false,
@@ -120,6 +128,12 @@ struct RawArgs {
     /// <ARTSL> BAG indication codes). Implies --artikelstamm.
     #[arg(long = "artikelstamm-v5", action = ArgAction::SetTrue)]
     artikelstamm_v5: bool,
+
+    /// Include the Italian description (<DSCRI>) in the Artikelstamm.
+    /// Off by default: the strict Elexis v6/v5 XSD has no DSCRI element,
+    /// so the default output carries only German + French.
+    #[arg(long = "italian", visible_alias = "it", action = ArgAction::SetTrue)]
+    italian: bool,
 
     /// Compression format: tar.gz | zip
     #[arg(short = 'c', long = "compress-ext", value_name = "FMT")]
@@ -222,6 +236,7 @@ impl Options {
 
         opts.artikelstamm = raw.artikelstamm;
         opts.artikelstamm_v5 = raw.artikelstamm_v5;
+        opts.italian = raw.italian;
         opts.compress_ext = raw.compress_ext;
         opts.extended = raw.extended;
         opts.fhir = raw.fhir;
@@ -405,6 +420,15 @@ mod tests {
         assert!(o.artikelstamm, "v5 implies the full artikelstamm build");
         assert!(o.extended, "artikelstamm implies extended");
         assert_eq!(o.price, Some(PriceSource::ZurRose));
+    }
+
+    #[test]
+    fn italian_is_off_by_default_and_opt_in() {
+        assert!(!Options::parse(["--artikelstamm"]).unwrap().italian,
+            "Italian description off by default (strict Elexis XSD)");
+        assert!(Options::parse(["--artikelstamm", "--italian"]).unwrap().italian);
+        assert!(Options::parse(["--artikelstamm", "--it"]).unwrap().italian,
+            "--it alias enables Italian");
     }
 
     #[test]
