@@ -395,11 +395,34 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
             ..Default::default()
         },
     );
+    // A Weleda Kapitel-70 article missing from the FHIR feed (arrives via
+    // Refdata/ZurRose without a price) — the Weleda/WALA SL recovery must add
+    // the SL flag and the BAG group price (issue #121).
+    let weleda_gtin = "7611916162404";
+    refdata_nonpharma.insert(
+        weleda_gtin.to_string(),
+        rust2xml::extractor::RefdataItem {
+            ean13: weleda_gtin.into(),
+            desc_de: "Absinthium Tropfen 50 ml".into(),
+            ..Default::default()
+        },
+    );
+    let mut weleda_sl = std::collections::HashMap::new();
+    weleda_sl.insert(
+        weleda_gtin.to_string(),
+        rust2xml::weleda_sl::WeledaEntry {
+            sl: true,
+            price: Some("26.95".into()),
+            csl: "2069591".into(),
+            abgabe: "FM / SL".into(),
+        },
+    );
 
     let inputs = Inputs {
         bag,
         swissmedic_packages,
         refdata_nonpharma,
+        weleda_sl,
         release_date: "2026-07-01".into(),
         ..Default::default()
     };
@@ -493,6 +516,21 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
     assert!(
         !xml.contains(&format!("<GTIN>{vet_gtin}</GTIN>")),
         "veterinary (ad us vet) article leaked into the XML"
+    );
+    // Weleda Kapitel-70 recovery: SL flag + BAG group price added.
+    assert!(
+        xml.contains(&format!("<GTIN>{weleda_gtin}</GTIN>")),
+        "Weleda GTIN missing from ITEMS"
+    );
+    assert!(
+        xml.contains("<PPUB>26.95</PPUB>") && xml.contains("<SL_ENTRY>true</SL_ENTRY>"),
+        "Weleda recovery did not add PPUB + SL_ENTRY"
+    );
+    assert!(
+        csv.lines().any(|l| l
+            .starts_with(&format!("{weleda_gtin},Absinthium Tropfen 50 ml,,,,26.95,"))
+            && l.ends_with(",SL")),
+        "Weleda CSV row missing recovered price / SL flag"
     );
 
     // Validate against the committed v6 XSD when xmllint is available

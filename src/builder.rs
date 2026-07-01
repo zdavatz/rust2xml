@@ -93,6 +93,9 @@ pub struct Inputs {
     pub firstbase: HashMap<String, FirstbaseItem>,
     pub epha_interactions: Vec<EphaInteraction>,
     pub lppv_ean13s: HashMap<String, bool>,
+    /// Weleda / WALA Kapitel-70 SL recovery: GTIN → SL flag + BAG group price
+    /// for complementary medicines missing from the FHIR feed (issue #121).
+    pub weleda_sl: HashMap<String, crate::weleda_sl::WeledaEntry>,
     pub release_date: String,
 }
 

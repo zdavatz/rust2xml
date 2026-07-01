@@ -203,6 +203,65 @@ impl LppvDownloader {
     }
 }
 
+/// Weleda / WALA Kapitel-70 SL recovery CSVs (issue #121). Each falls back to
+/// the bundled `data/` copy in `weleda_sl.rs` when the download is unavailable.
+pub struct WeledaDownloader {
+    pub base: BaseDownloader,
+}
+
+impl WeledaDownloader {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            base: BaseDownloader::new(
+                "https://raw.githubusercontent.com/zdavatz/oddb2xml_files/master/weleda_arzneimittel.csv",
+            )?,
+        })
+    }
+
+    pub fn download(&self) -> Result<Vec<u8>> {
+        let path = util::work_dir().join("weleda_arzneimittel.csv");
+        download_as(&self.base.client, &self.base.url, &path)
+    }
+}
+
+pub struct WalaDownloader {
+    pub base: BaseDownloader,
+}
+
+impl WalaDownloader {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            base: BaseDownloader::new(
+                "https://raw.githubusercontent.com/zdavatz/oddb2xml_files/master/wala_arzneimittel.csv",
+            )?,
+        })
+    }
+
+    pub fn download(&self) -> Result<Vec<u8>> {
+        let path = util::work_dir().join("wala_arzneimittel.csv");
+        download_as(&self.base.client, &self.base.url, &path)
+    }
+}
+
+pub struct BagSlGroupPricesDownloader {
+    pub base: BaseDownloader,
+}
+
+impl BagSlGroupPricesDownloader {
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            base: BaseDownloader::new(
+                "https://raw.githubusercontent.com/zdavatz/oddb2xml_files/master/bag_sl_group_prices.csv",
+            )?,
+        })
+    }
+
+    pub fn download(&self) -> Result<Vec<u8>> {
+        let path = util::work_dir().join("bag_sl_group_prices.csv");
+        download_as(&self.base.client, &self.base.url, &path)
+    }
+}
+
 pub struct BagXmlDownloader {
     pub base: BaseDownloader,
 }

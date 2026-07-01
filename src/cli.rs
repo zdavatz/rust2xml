@@ -267,6 +267,36 @@ impl Cli {
             Ok(())
         })));
 
+        // Weleda / WALA Kapitel-70 SL recovery (issue #121): SL flag + BAG group
+        // price for complementary medicines missing from the FHIR feed. Needed
+        // by the Artikelstamm and the -e/-b article feeds. Each CSV falls back
+        // to its bundled copy when the live download is unavailable.
+        if self.opts.artikelstamm || self.opts.extended || self.opts.firstbase {
+            jobs.push(("Weleda/WALA SL prices", Box::new(|store: &Mutex<Inputs>| {
+                fn fetch(dl: Result<Vec<u8>>, bundled: &str) -> String {
+                    match dl {
+                        Ok(b) if !b.is_empty() => String::from_utf8_lossy(&b).into_owned(),
+                        _ => bundled.to_string(),
+                    }
+                }
+                let weleda = fetch(
+                    downloader::WeledaDownloader::new().and_then(|d| d.download()),
+                    crate::weleda_sl::BUNDLED_WELEDA,
+                );
+                let wala = fetch(
+                    downloader::WalaDownloader::new().and_then(|d| d.download()),
+                    crate::weleda_sl::BUNDLED_WALA,
+                );
+                let prices = fetch(
+                    downloader::BagSlGroupPricesDownloader::new().and_then(|d| d.download()),
+                    crate::weleda_sl::BUNDLED_BAG_SL_GROUP_PRICES,
+                );
+                let map = crate::weleda_sl::load(&weleda, &wala, &prices);
+                store.lock().unwrap().weleda_sl.extend(map);
+                Ok(())
+            })));
+        }
+
         // Swissmedic packages.xlsx — supplies GTIN, PRODNO, IT,
         // PackGrSwissmedic, EinheitSwissmedic, SubstanceSwissmedic,
         // CompositionSwissmedic per no8.

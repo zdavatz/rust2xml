@@ -591,19 +591,38 @@ impl Builder {
             .map(|z| z.price.clone())
             .filter(|p| !p.is_empty() && p != "0.00")
             .unwrap_or_default();
-        let csv_ppub = zr
+        let mut csv_ppub = zr
             .map(|z| z.pub_price.clone())
             .filter(|p| !p.is_empty() && p != "0.00")
             .unwrap_or_default();
+
+        // Weleda / WALA Kapitel-70 SL recovery (issue #121): for a complementary
+        // medicine missing from the FHIR feed, restore the SL flag and fill a
+        // blank public price from the BAG group price. The FHIR/ZurRose price
+        // always wins — the group price only fills a gap.
+        let weleda = self.inputs.weleda_sl.get(&rjust13(gtin));
+        if let Some(w) = weleda {
+            if csv_ppub.is_empty() {
+                if let Some(p) = &w.price {
+                    csv_ppub = p.clone();
+                }
+            }
+        }
+
         if !csv_pexf.is_empty() {
             nodes.push(Node::leaf("PEXF", csv_pexf.clone()));
         }
         if !csv_ppub.is_empty() {
             nodes.push(Node::leaf("PPUB", csv_ppub.clone()));
         }
+        let sl_recovered = weleda.is_some();
+        if sl_recovered {
+            nodes.push(Node::leaf("SL_ENTRY", "true"));
+        }
 
-        // Companion CSV row (matches the Ruby non-pharma row): only gtin, name
-        // and the two prices; the pharma-only columns stay empty.
+        // Companion CSV row (matches the Ruby non-pharma row): gtin, name and
+        // the two prices; the pharma-only columns stay empty, and sl-liste is
+        // "SL" for a recovered Kapitel-70 product.
         let csv = vec![
             rjust13(gtin),
             csv_name,
@@ -616,7 +635,7 @@ impl Builder {
             String::new(),
             String::new(),
             String::new(),
-            String::new(),
+            if sl_recovered { "SL".to_string() } else { String::new() },
         ];
         Some(Item {
             pharmatype,

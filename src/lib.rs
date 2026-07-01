@@ -26,6 +26,7 @@ pub mod refdata_cleanup;
 pub mod semantic_check;
 pub mod sqlite_export;
 pub mod util;
+pub mod weleda_sl;
 pub mod xml_definitions;
 
 pub use options::Options;

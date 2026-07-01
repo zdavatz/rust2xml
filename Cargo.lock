@@ -3582,7 +3582,7 @@ dependencies = [
 
 [[package]]
 name = "rust2xml"
-version = "3.1.24"
+version = "3.1.25"
 dependencies = [
  "anyhow",
  "calamine",
