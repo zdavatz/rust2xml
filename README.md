@@ -117,8 +117,11 @@ Four binaries land in `target/release/`:
 # Use the new FHIR NDJSON feed instead of BAG XML
 ./target/release/rust2xml --fhir
 
-# Artikelstamm v3/v5 (Elexis ≥ 3.1)
+# Elexis Artikelstamm v6 (Elexis ≥ 3.1) → artikelstamm_v6.xml + .csv
 ./target/release/rust2xml --artikelstamm
+
+# Additionally emit the legacy v5 (no <ARTSL>) → artikelstamm_v5.xml + .csv
+./target/release/rust2xml --artikelstamm-v5
 
 # Cache downloads — re-uses files already under ./downloads/
 ./target/release/rust2xml -e --skip-download --log
@@ -208,8 +211,16 @@ Each run creates a fresh timestamped file; old runs stay on disk.
 - `oddb_interaction.xml`
 - `oddb_code.xml`
 - `oddb_calc.xml` (when `-e` / `--calc` / `--firstbase` / `--artikelstamm`)
+- `artikelstamm_v6.xml` + `artikelstamm_v6.csv` (when `--artikelstamm`) —
+  Elexis Artikelstamm v6 (`<PRODUCTS>`/`<LIMITATIONS>`/`<ITEMS>`, with the
+  per-item `<ARTSL>` BAG Indikationscode block); validates against
+  `Elexis_Artikelstamm_v6.xsd`
+- `artikelstamm_v5.xml` + `artikelstamm_v5.csv` (when `--artikelstamm-v5`) —
+  legacy v5 shape (no `<ARTSL>`); validates against `Elexis_Artikelstamm_v5.xsd`
 
-Every top-level element in each file carries a `SHA256` attribute whose
+The `artikelstamm_*` files carry **no** `SHA256` attribute (matching
+oddb2xml). Every top-level element in the `oddb_*.xml` files carries a
+`SHA256` attribute whose
 value is the hex digest of the element's text content, so consumers can
 detect unchanged nodes between runs (same contract as the Ruby gem).
 
@@ -221,7 +232,8 @@ including optimist's auto-assigned short flags:
 | Flag | Short | Purpose |
 |---|---|---|
 | `--append` | `-a` | Additional target nonpharma |
-| `--artikelstamm` | | Create Artikelstamm v3/v5 for Elexis ≥ 3.1 |
+| `--artikelstamm` | | Create Elexis Artikelstamm v6 (`artikelstamm_v6.xml` + `.csv`) |
+| `--artikelstamm-v5` | | Additionally emit the legacy v5 (no `<ARTSL>`); implies `--artikelstamm` |
 | `--compress-ext <FMT>` | `-c` | `tar.gz` or `zip` |
 | `--extended` | `-e` | Pharma + non-pharma + ZurRose + `oddb_calc.xml` |
 | `--fhir` | | Use FOPH/BAG FHIR NDJSON feed (default ON for `-e`/`-b` since 01.06.2026) |
@@ -245,6 +257,7 @@ Implied-flag cascade (same behaviour as Ruby):
 - `--firstbase` → sets `nonpharma`, `calc`, and (since 01.06.2026) `fhir` unless `--no-fhir`
 - `--extended` → sets `nonpharma`, `price=zurrose`, `calc`, and (since 01.06.2026) `fhir` unless `--no-fhir`
 - `--artikelstamm` → sets `extended`, `price=zurrose`
+- `--artikelstamm-v5` → sets `artikelstamm` (and thus `extended`, `price=zurrose`)
 - `--fhir-url` → sets `fhir`
 - `-f xml` → forces `ean14=true`
 - `-x address` / `-x addr` → `address=true`
