@@ -385,6 +385,16 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
             ..Default::default()
         },
     );
+    // Veterinary article ("ad us vet") — must be dropped like oddb2xml.
+    let vet_gtin = "7680427360319";
+    refdata_nonpharma.insert(
+        vet_gtin.to_string(),
+        rust2xml::extractor::RefdataItem {
+            ean13: vet_gtin.into(),
+            desc_de: "MINALGIN Inj Lös ad us vet. Fl 100 ml".into(),
+            ..Default::default()
+        },
+    );
 
     let inputs = Inputs {
         bag,
@@ -474,6 +484,15 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
             "{sm_only_gtin},SWISSMEDIC-ONLY Tabl 20 Stk,20,"
         )) && l.ends_with(",1234567,N02BE01,paracetamolum,,01.01.1.,")),
         "Swissmedic-only CSV row missing or malformed"
+    );
+    // Veterinary article must be filtered out of both outputs.
+    assert!(
+        !csv.lines().any(|l| l.starts_with(vet_gtin)),
+        "veterinary (ad us vet) article leaked into the CSV"
+    );
+    assert!(
+        !xml.contains(&format!("<GTIN>{vet_gtin}</GTIN>")),
+        "veterinary (ad us vet) article leaked into the XML"
     );
 
     // Validate against the committed v6 XSD when xmllint is available

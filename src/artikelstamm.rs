@@ -332,10 +332,10 @@ impl Builder {
             if !emitted.insert(gtin.clone()) {
                 continue;
             }
-            if let Some((item, pkg)) = pack_by_ean.get(gtin.as_str()) {
-                out.push(self.pharma_item(gtin, item, pkg, version));
+            let built = if let Some((item, pkg)) = pack_by_ean.get(gtin.as_str()) {
+                Some(self.pharma_item(gtin, item, pkg, version))
             } else if let Some(it) = self.nonpharma_item(gtin) {
-                out.push(it);
+                Some(it)
             } else if !self.inputs.zurrose.contains_key(gtin)
                 && !self.inputs.refdata_pharma.contains_key(gtin)
                 && !self.inputs.refdata_nonpharma.contains_key(gtin)
@@ -344,10 +344,17 @@ impl Builder {
                 // the Swissmedic register, as oddb2xml does.  Guarding on the
                 // three sources being absent keeps the ZurRose-7680 skip in
                 // nonpharma_item authoritative (those must stay dropped).
-                if let Some(sm) = sm_by_ean.get(gtin.as_str()) {
-                    if let Some(it) = self.swissmedic_item(gtin, sm) {
-                        out.push(it);
-                    }
+                sm_by_ean
+                    .get(gtin.as_str())
+                    .and_then(|sm| self.swissmedic_item(gtin, sm))
+            } else {
+                None
+            };
+            // Global veterinary filter: no "ad us vet" article reaches any
+            // output, whatever source it came from (issue: no vet data at all).
+            if let Some(it) = built {
+                if !is_veterinary_name(&it.csv[1]) {
+                    out.push(it);
                 }
             }
         }
@@ -629,13 +636,12 @@ impl Builder {
         gtin: &str,
         sm: &crate::extractor::swissmedic::SwissmedicPackage,
     ) -> Option<Item> {
+        // Structural veterinary markers only present on the Swissmedic record;
+        // the name-based "ad us vet" filter is applied globally in the caller.
         if sm.is_tier || sm.list_code.contains("Tierarzneimittel") {
             return None;
         }
         let name = sm.sequence_name.clone();
-        if name.to_lowercase().contains("ad us vet") {
-            return None;
-        }
 
         let mut nodes: Vec<Node> = Vec::with_capacity(12);
         nodes.push(Node::leaf("GTIN", rjust13(gtin)));
@@ -714,6 +720,13 @@ fn lim_code(lim: &crate::extractor::BagLimitation) -> &str {
     } else {
         &lim.cud_ref
     }
+}
+
+/// Veterinary marker: oddb2xml drops any article whose German description
+/// contains "ad us vet" (ad usum veterinarium).  We want no veterinary data
+/// in the Artikelstamm at all, so this is applied to every emitted item.
+fn is_veterinary_name(name: &str) -> bool {
+    name.to_lowercase().contains("ad us vet")
 }
 
 /// Zero-pad a GTIN to 13 chars, matching Ruby's `.rjust(13, "0")`.
