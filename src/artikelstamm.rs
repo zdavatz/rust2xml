@@ -292,6 +292,16 @@ impl Builder {
                 pack_by_ean.entry(ean.as_str()).or_insert((item, pkg));
             }
         }
+        // Index Swissmedic packs by pack-GTIN, so a Swissmedic-registered pack
+        // absent from BAG/Refdata/ZurRose can still be emitted (oddb2xml does
+        // this via `obj = @packs[no8]` — every Swissmedic pack becomes an ITEM).
+        let mut sm_by_ean: HashMap<&str, &crate::extractor::swissmedic::SwissmedicPackage> =
+            HashMap::new();
+        for sm in self.inputs.swissmedic_packages.values() {
+            if !sm.ean13.is_empty() {
+                sm_by_ean.entry(sm.ean13.as_str()).or_insert(sm);
+            }
+        }
 
         // Union of every GTIN across the sources.
         let mut gtins: HashSet<String> = HashSet::new();
@@ -326,6 +336,19 @@ impl Builder {
                 out.push(self.pharma_item(gtin, item, pkg, version));
             } else if let Some(it) = self.nonpharma_item(gtin) {
                 out.push(it);
+            } else if !self.inputs.zurrose.contains_key(gtin)
+                && !self.inputs.refdata_pharma.contains_key(gtin)
+                && !self.inputs.refdata_nonpharma.contains_key(gtin)
+            {
+                // Pure Swissmedic pack (no BAG/Refdata/ZurRose) — emit it from
+                // the Swissmedic register, as oddb2xml does.  Guarding on the
+                // three sources being absent keeps the ZurRose-7680 skip in
+                // nonpharma_item authoritative (those must stay dropped).
+                if let Some(sm) = sm_by_ean.get(gtin.as_str()) {
+                    if let Some(it) = self.swissmedic_item(gtin, sm) {
+                        out.push(it);
+                    }
+                }
             }
         }
         out
@@ -588,6 +611,91 @@ impl Builder {
             String::new(),
             String::new(),
         ];
+        Some(Item {
+            pharmatype,
+            children: nodes,
+            csv,
+        })
+    }
+
+    /// A pharma `<ITEM>` for a Swissmedic-registered pack that is absent from
+    /// BAG / Refdata / ZurRose.  Mirrors oddb2xml, which turns every Swissmedic
+    /// pack into an ITEM (`obj = @packs[no8]`); these carry the register's
+    /// PRODNO / ATC / substance / IT-code but no SL flag and no price.  Returns
+    /// `None` for veterinary packs (oddb2xml skips `Tierarzneimittel` /
+    /// "ad us vet").
+    fn swissmedic_item(
+        &self,
+        gtin: &str,
+        sm: &crate::extractor::swissmedic::SwissmedicPackage,
+    ) -> Option<Item> {
+        if sm.is_tier || sm.list_code.contains("Tierarzneimittel") {
+            return None;
+        }
+        let name = sm.sequence_name.clone();
+        if name.to_lowercase().contains("ad us vet") {
+            return None;
+        }
+
+        let mut nodes: Vec<Node> = Vec::with_capacity(12);
+        nodes.push(Node::leaf("GTIN", rjust13(gtin)));
+        nodes.push(Node::leaf("SALECD", "A"));
+        nodes.push(Node::leaf("DSCR", name.clone()));
+        nodes.push(Node::leaf("DSCRF", ""));
+        if !sm.company_name.is_empty() {
+            nodes.push(Node::nested(
+                "COMP",
+                vec![Node::leaf("NAME", truncate(&sm.company_name, 100))],
+            ));
+        }
+        // Pack size / measure / galenic form from Swissmedic.
+        if let Ok(n) = sm.package_size.trim().parse::<i64>() {
+            nodes.push(Node::leaf("PKG_SIZE", n.to_string()));
+        }
+        if !sm.einheit_swissmedic.is_empty() {
+            nodes.push(Node::leaf("MEASURE", sm.einheit_swissmedic.clone()));
+        }
+        let (form, _, _) = galenic_for(&name, &sm.einheit_swissmedic);
+        if !form.is_empty() {
+            nodes.push(Node::leaf("DOSAGE_FORM", form.clone()));
+        }
+        // IKSCAT: XSD restricts to A-E.
+        if let Some(c) = sm.swissmedic_category.chars().next() {
+            if ('A'..='E').contains(&c) {
+                nodes.push(Node::leaf("IKSCAT", c.to_string()));
+            }
+        }
+        if self.inputs.lppv_ean13s.contains_key(gtin) {
+            nodes.push(Node::leaf("LPPV", "true"));
+        }
+        if !sm.prodno.is_empty() {
+            nodes.push(Node::leaf("PRODNO", sm.prodno.clone()));
+        }
+
+        // 7680-registered packs are pharma; anything else non-pharma.
+        let pharmatype = if rjust13(gtin).starts_with("7680") {
+            "P"
+        } else {
+            "N"
+        };
+
+        // Companion CSV row (matches the Ruby pharma row): PRODNO/ATC/substance/
+        // IT-code from Swissmedic, no price, not SL.
+        let csv = vec![
+            rjust13(gtin),
+            name,
+            sm.package_size.clone(),
+            form,
+            String::new(),
+            String::new(),
+            sm.prodno.clone(),
+            sm.atc_code.clone(),
+            sm.substance_swissmedic.clone(),
+            String::new(),
+            sm.ith_swissmedic.clone(),
+            String::new(),
+        ];
+
         Some(Item {
             pharmatype,
             children: nodes,

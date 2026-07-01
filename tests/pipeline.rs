@@ -329,6 +329,25 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
             ..Default::default()
         },
     );
+    // A Swissmedic-registered pack absent from BAG/Refdata/ZurRose — oddb2xml
+    // emits every such pack (obj = @packs[no8]); rust2xml must too.
+    let sm_only_gtin = "7680999998887";
+    swissmedic_packages.insert(
+        "99999888".into(),
+        SwissmedicPackage {
+            no8: "99999888".into(),
+            ean13: sm_only_gtin.into(),
+            prodno: "1234567".into(),
+            swissmedic_category: "B".into(),
+            atc_code: "N02BE01".into(),
+            package_size: "20".into(),
+            einheit_swissmedic: "Tablette(n)".into(),
+            substance_swissmedic: "paracetamolum".into(),
+            ith_swissmedic: "01.01.1.".into(),
+            sequence_name: "SWISSMEDIC-ONLY Tabl 20 Stk".into(),
+            ..Default::default()
+        },
+    );
 
     // A non-pharma article (no BAG pack) so the ITEMS/CSV also cover the
     // item-level, non-SL rows — mirroring oddb2xml, whose CSV has one row per
@@ -439,6 +458,22 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
     assert!(
         csv.lines().any(|l| l.starts_with(real_five_nine_gtin)),
         "real five-nine GTIN wrongly filtered from the CSV"
+    );
+    // A Swissmedic-only pack (no BAG/Refdata/ZurRose) is emitted as a pharma
+    // ITEM carrying its register data, matching oddb2xml.
+    assert!(
+        xml.contains(&format!("<GTIN>{sm_only_gtin}</GTIN>")),
+        "Swissmedic-only GTIN missing from ITEMS"
+    );
+    assert!(
+        xml.contains("<PRODNO>1234567</PRODNO>"),
+        "Swissmedic-only PRODNO missing from ITEM"
+    );
+    assert!(
+        csv.lines().any(|l| l.starts_with(&format!(
+            "{sm_only_gtin},SWISSMEDIC-ONLY Tabl 20 Stk,20,"
+        )) && l.ends_with(",1234567,N02BE01,paracetamolum,,01.01.1.,")),
+        "Swissmedic-only CSV row missing or malformed"
     );
 
     // Validate against the committed v6 XSD when xmllint is available
