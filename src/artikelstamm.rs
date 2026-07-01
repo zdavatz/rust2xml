@@ -313,6 +313,12 @@ impl Builder {
             if gtin.is_empty() || gtin.chars().all(|c| c == '0') {
                 continue;
             }
+            // Skip synthetic 999999+pharmacode placeholders for ZurRose
+            // articles that have no real EAN13 — oddb2xml drops these from the
+            // Artikelstamm too (`next if /^999999/`, FAKE_GTIN_START).
+            if gtin.starts_with(crate::util::FAKE_GTIN_START) {
+                continue;
+            }
             if !emitted.insert(gtin.clone()) {
                 continue;
             }

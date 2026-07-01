@@ -343,6 +343,29 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
             ..Default::default()
         },
     );
+    // A synthetic 999999+pharmacode placeholder (ZurRose article with no real
+    // EAN13) — must be dropped from the Artikelstamm, like oddb2xml does.
+    // FAKE_GTIN_START is "999999" (six nines) + pharmacode; a GTIN with only
+    // five leading nines (e.g. a real 9999978… article) must NOT be filtered.
+    let fake_gtin = "9999991234567";
+    refdata_nonpharma.insert(
+        fake_gtin.to_string(),
+        rust2xml::extractor::RefdataItem {
+            ean13: fake_gtin.into(),
+            desc_de: "FAKE placeholder article".into(),
+            ..Default::default()
+        },
+    );
+    // Boundary: a real GTIN with only five leading nines must survive.
+    let real_five_nine_gtin = "9999978462921";
+    refdata_nonpharma.insert(
+        real_five_nine_gtin.to_string(),
+        rust2xml::extractor::RefdataItem {
+            ean13: real_five_nine_gtin.into(),
+            desc_de: "REAL five-nine article".into(),
+            ..Default::default()
+        },
+    );
 
     let inputs = Inputs {
         bag,
@@ -402,6 +425,20 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
     assert!(
         xml.contains(&format!("<GTIN>{nonpharma_gtin}</GTIN>")),
         "non-pharma GTIN missing from ITEMS"
+    );
+    // The synthetic 999999… placeholder must be filtered out of both outputs.
+    assert!(
+        !csv.lines().any(|l| l.starts_with(fake_gtin)),
+        "fake 999999 GTIN leaked into the CSV"
+    );
+    assert!(
+        !xml.contains(&format!("<GTIN>{fake_gtin}</GTIN>")),
+        "fake 999999 GTIN leaked into the XML"
+    );
+    // …but a real five-nine GTIN must not be caught by the filter.
+    assert!(
+        csv.lines().any(|l| l.starts_with(real_five_nine_gtin)),
+        "real five-nine GTIN wrongly filtered from the CSV"
     );
 
     // Validate against the committed v6 XSD when xmllint is available
