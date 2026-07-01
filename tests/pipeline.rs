@@ -330,9 +330,24 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
         },
     );
 
+    // A non-pharma article (no BAG pack) so the ITEMS/CSV also cover the
+    // item-level, non-SL rows — mirroring oddb2xml, whose CSV has one row per
+    // article, not just per priced pack.
+    let nonpharma_gtin = "7612345678901";
+    let mut refdata_nonpharma = std::collections::HashMap::new();
+    refdata_nonpharma.insert(
+        nonpharma_gtin.to_string(),
+        rust2xml::extractor::RefdataItem {
+            ean13: nonpharma_gtin.into(),
+            desc_de: "TEST Non-Pharma Artikel".into(),
+            ..Default::default()
+        },
+    );
+
     let inputs = Inputs {
         bag,
         swissmedic_packages,
+        refdata_nonpharma,
         release_date: "2026-07-01".into(),
         ..Default::default()
     };
@@ -375,6 +390,19 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
     let csv = builder.artikelstamm_csv();
     assert!(csv.starts_with("gtin,name,pkg_size,galenic_form"), "CSV header missing");
     assert!(csv.contains(&pkg_ean), "CSV missing pack row");
+    // Item-level alignment: the non-pharma article is present as its own CSV
+    // row with only gtin + name filled and the pharma columns empty.
+    assert!(
+        csv.lines()
+            .any(|l| l.starts_with(&format!("{nonpharma_gtin},TEST Non-Pharma Artikel,,,,,,,,,,"))),
+        "CSV missing item-level non-pharma row"
+    );
+    // The non-pharma GTIN must also appear as an <ITEM> in the XML, so the CSV
+    // and XML item sets stay identical.
+    assert!(
+        xml.contains(&format!("<GTIN>{nonpharma_gtin}</GTIN>")),
+        "non-pharma GTIN missing from ITEMS"
+    );
 
     // Validate against the committed v6 XSD when xmllint is available
     // (skipped silently on hosts without libxml2-utils, e.g. bare CI).

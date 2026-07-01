@@ -24,10 +24,13 @@ use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 
 /// One `<ITEM>` ready to serialise: the `PHARMATYPE` attribute plus the
-/// ordered child nodes.
+/// ordered child nodes.  `csv` is the companion CSV row (12 columns, see
+/// [`Builder::artikelstamm_csv`]) so the CSV always mirrors the XML `<ITEM>`
+/// set exactly — one row per emitted item, pharma and non-pharma alike.
 struct Item {
     pharmatype: &'static str,
     children: Vec<Node>,
+    csv: Vec<String>,
 }
 
 impl Builder {
@@ -95,62 +98,20 @@ impl Builder {
         Ok(String::from_utf8(bytes)?)
     }
 
-    /// Companion CSV: one row per emitted pharma pack.  Columns mirror the
-    /// Ruby `@csv_file`: gtin, name, pkg_size, galenic_form, price_ex_factory,
-    /// price_public, prodno, atc_code, active_substance, original, it-code,
-    /// sl-liste.
+    /// Companion CSV: **one row per emitted `<ITEM>`** — pharma packs *and*
+    /// non-pharma articles — mirroring the Ruby `@csv_file` (which writes a row
+    /// for every article, not just the priced SL packs).  Columns: gtin, name,
+    /// pkg_size, galenic_form, price_ex_factory, price_public, prodno,
+    /// atc_code, active_substance, original, it-code, sl-liste.  The rows are
+    /// carried on each [`Item`] so the CSV set is identical to the XML
+    /// `<ITEMS>` set; the `version` passed here does not affect the CSV (the
+    /// per-version `<ARTSL>` block lives only in the XML).
     pub fn artikelstamm_csv(&self) -> String {
         let mut out = String::new();
         out.push_str("gtin,name,pkg_size,galenic_form,price_ex_factory,price_public,prodno,atc_code,active_substance,original,it-code,sl-liste\n");
-        let mut emitted: HashSet<String> = HashSet::new();
-        let mut keys: Vec<&String> = self.inputs.bag.keys().collect();
-        keys.sort();
-        for ean13 in keys {
-            let item = &self.inputs.bag[ean13];
-            let mut pkg_keys: Vec<&String> = item.packages.keys().collect();
-            pkg_keys.sort();
-            for pkg_ean in pkg_keys {
-                let pkg = &item.packages[pkg_ean];
-                if !emitted.insert(pkg_ean.clone()) {
-                    continue;
-                }
-                let sm = self.inputs.swissmedic_packages.get(&pkg.swissmedic_number8);
-                let refdata = self
-                    .inputs
-                    .refdata_pharma
-                    .get(pkg_ean)
-                    .or_else(|| self.inputs.refdata_nonpharma.get(pkg_ean));
-                let name = first_non_empty(&[
-                    refdata.map(|r| r.desc_de.as_str()).unwrap_or(""),
-                    sm.map(|s| s.sequence_name.as_str()).unwrap_or(""),
-                    pkg.desc_de.as_str(),
-                    item.name_de.as_str(),
-                ]);
-                let (form, _, _) = galenic_for(
-                    &name,
-                    sm.map(|s| s.einheit_swissmedic.as_str()).unwrap_or(""),
-                );
-                let row = [
-                    pkg_ean.clone(),
-                    name,
-                    sm.map(|s| s.package_size.clone()).unwrap_or_default(),
-                    form,
-                    pkg.prices.exf_price.price.clone(),
-                    pkg.prices.pub_price.price.clone(),
-                    sm.map(|s| s.prodno.clone()).unwrap_or_default(),
-                    sm.map(|s| s.atc_code.clone())
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or_else(|| item.atc_code.clone()),
-                    sm.map(|s| s.substance_swissmedic.clone()).unwrap_or_default(),
-                    item.org_gen_code.clone(),
-                    sm.map(|s| s.ith_swissmedic.clone())
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or_else(|| item.it_code.clone()),
-                    if pkg.sl_entry { "SL".to_string() } else { String::new() },
-                ];
-                out.push_str(&row.iter().map(|c| csv_escape(c)).collect::<Vec<_>>().join(","));
-                out.push('\n');
-            }
+        for item in self.artikelstamm_items(6) {
+            out.push_str(&item.csv.iter().map(|c| csv_escape(c)).collect::<Vec<_>>().join(","));
+            out.push('\n');
         }
         out
     }
@@ -494,9 +455,42 @@ impl Builder {
             }
         }
 
+        // Companion CSV row (matches the Ruby pharma row).  Uses Swissmedic's
+        // raw pack size / substance / prodno rather than the XML-normalised
+        // node values, exactly as the previous CSV did.
+        let csv_name = first_non_empty(&[
+            refdata.map(|r| r.desc_de.as_str()).unwrap_or(""),
+            sm.map(|s| s.sequence_name.as_str()).unwrap_or(""),
+            pkg.desc_de.as_str(),
+            item.name_de.as_str(),
+        ]);
+        let (csv_form, _, _) = galenic_for(
+            &csv_name,
+            sm.map(|s| s.einheit_swissmedic.as_str()).unwrap_or(""),
+        );
+        let csv = vec![
+            rjust13(gtin),
+            csv_name,
+            sm.map(|s| s.package_size.clone()).unwrap_or_default(),
+            csv_form,
+            pkg.prices.exf_price.price.clone(),
+            pkg.prices.pub_price.price.clone(),
+            sm.map(|s| s.prodno.clone()).unwrap_or_default(),
+            sm.map(|s| s.atc_code.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| item.atc_code.clone()),
+            sm.map(|s| s.substance_swissmedic.clone()).unwrap_or_default(),
+            item.org_gen_code.clone(),
+            sm.map(|s| s.ith_swissmedic.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| item.it_code.clone()),
+            if pkg.sl_entry { "SL".to_string() } else { String::new() },
+        ];
+
         Item {
             pharmatype: "P",
             children: nodes,
+            csv,
         }
     }
 
@@ -532,6 +526,7 @@ impl Builder {
         ]);
         let dscrf = refdata.map(|r| r.desc_fr.clone()).unwrap_or_default();
         let dscri = refdata.map(|r| r.desc_it.clone()).unwrap_or_default();
+        let csv_name = dscr.clone();
 
         let mut nodes: Vec<Node> = Vec::with_capacity(10);
         nodes.push(Node::leaf("GTIN", rjust13(gtin)));
@@ -556,17 +551,41 @@ impl Builder {
                 nodes.push(Node::nested("COMP", vec![Node::leaf("GLN", r.company_ean.clone())]));
             }
         }
-        if let Some(z) = zr {
-            if !z.price.is_empty() && z.price != "0.00" {
-                nodes.push(Node::leaf("PEXF", z.price.clone()));
-            }
-            if !z.pub_price.is_empty() && z.pub_price != "0.00" {
-                nodes.push(Node::leaf("PPUB", z.pub_price.clone()));
-            }
+        let csv_pexf = zr
+            .map(|z| z.price.clone())
+            .filter(|p| !p.is_empty() && p != "0.00")
+            .unwrap_or_default();
+        let csv_ppub = zr
+            .map(|z| z.pub_price.clone())
+            .filter(|p| !p.is_empty() && p != "0.00")
+            .unwrap_or_default();
+        if !csv_pexf.is_empty() {
+            nodes.push(Node::leaf("PEXF", csv_pexf.clone()));
         }
+        if !csv_ppub.is_empty() {
+            nodes.push(Node::leaf("PPUB", csv_ppub.clone()));
+        }
+
+        // Companion CSV row (matches the Ruby non-pharma row): only gtin, name
+        // and the two prices; the pharma-only columns stay empty.
+        let csv = vec![
+            rjust13(gtin),
+            csv_name,
+            String::new(),
+            String::new(),
+            csv_pexf,
+            csv_ppub,
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ];
         Some(Item {
             pharmatype,
             children: nodes,
+            csv,
         })
     }
 }
