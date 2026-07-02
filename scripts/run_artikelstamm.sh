@@ -31,6 +31,31 @@ cd "$REPO_DIR"
 log "Building rust2xml (release)"
 cargo build --release --bin rust2xml
 
+# Actually download fresh: rust2xml's skip_download cache never expires, so
+# without clearing it every nightly run silently rebuilds from the same old
+# sources (observed: all of ~/rust2xml/downloads still from the previous day).
+# Same file list as documented in CLAUDE.md (v3.1.10).
+log "Clearing download cache"
+rm -rf "$HOME/rust2xml/downloads"
+rm -f "$HOME"/rust2xml/foph-*.ndjson "$HOME/rust2xml/transfer.zip" \
+      "$HOME/rust2xml/Refdata.Articles.zip"
+
+# ZurRose: seed transfer.zip from the local get_transfer mirror.
+# get_transfer.sh (crontab 00:30) downloads transfer.dat straight from
+# zurrose.ch on THIS host and uploads the zip to pillbox.oddb.org — fetching
+# it back from pillbox is a needless detour and a single point of failure
+# (2026-07-02: pillbox refused connections at 01:00 and killed the Ruby
+# nightly build). With the seed in downloads/, rust2xml's skip_download
+# reuses it; if the file is missing, the normal pillbox download runs.
+GET_TRANSFER_ZIP="${GET_TRANSFER_ZIP:-/home/zdavatz/software/get_transfer/TRANSFER.ZIP}"
+if [[ -s "$GET_TRANSFER_ZIP" ]]; then
+  mkdir -p "$HOME/rust2xml/downloads"
+  cp -p "$GET_TRANSFER_ZIP" "$HOME/rust2xml/downloads/transfer.zip"
+  log "Seeded ZurRose transfer.zip from $GET_TRANSFER_ZIP ($(date -r "$GET_TRANSFER_ZIP" '+%Y-%m-%d %H:%M'))"
+else
+  log "WARNING: $GET_TRANSFER_ZIP missing - falling back to pillbox.oddb.org download"
+fi
+
 log "Generating Artikelstamm v6 + v5 (fresh download)"
 ./target/release/rust2xml --artikelstamm-v5 --log
 
