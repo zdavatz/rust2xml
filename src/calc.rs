@@ -161,6 +161,74 @@ const FORM_GROUP: &[(&str, &str)] = &[
     ("Vernebler", "Inhalanda"),
 ];
 
+/// Galenic form (German) → French description, extracted from the Ruby
+/// `data/gal_forms.yaml` (`GalenicForm.descriptions["fr"]`).  Used for the
+/// Artikelstamm `<DOSAGE_FORMF>` leaf.  Singular / spelling variants map to
+/// the same French text as their canonical plural yaml entry; abbreviations
+/// ("Tabl", "Inj Lös") and container words ("Ampulle", "Fertigspritze") have
+/// no yaml counterpart, so — like Ruby — no French form is emitted for them.
+const FORM_FR: &[(&str, &str)] = &[
+    ("Filmtabletten", "Comprimés filmés"),
+    ("Filmtablette", "Comprimés filmés"),
+    ("Brausetabletten", "comprimés effervescents"),
+    ("Brausetablette", "comprimés effervescents"),
+    ("Kautabletten", "Comprimés à mâcher"),
+    ("Kautablette", "Comprimés à mâcher"),
+    ("Lutschtabletten", "Comprimés à succer"),
+    ("Lutschtablette", "Comprimés à succer"),
+    ("Schmelztabletten", "Comprimés orodispersibles"),
+    ("Schmelztablette", "Comprimés orodispersibles"),
+    ("Sublingualtabletten", "Comprimés sublinguaux"),
+    ("Sublingualtablette", "Comprimés sublinguaux"),
+    ("Retardtabletten", "Comprimés retards"),
+    ("Retardtablette", "Comprimés retards"),
+    ("Vaginaltabletten", "Comprimés vaginaux"),
+    ("Vaginaltablette", "Comprimés vaginaux"),
+    ("Tabletten", "Comprimés"),
+    ("Tablette", "Comprimés"),
+    ("Dragée", "Dragées"),
+    ("Dragees", "Dragées"),
+    ("Weichkapseln", "Capsules molles"),
+    ("Weichkapsel", "Capsules molles"),
+    ("Retardkapseln", "Capsules retard"),
+    ("Retardkapsel", "Capsules retard"),
+    ("Kapseln", "Capsules"),
+    ("Kapsel", "Capsules"),
+    ("Injektionslösung", "Solution injectable"),
+    ("Injektionssuspension", "Suspension injectable"),
+    ("Injektionsemulsion", "Emulsion pour injection"),
+    ("Infusionslösung", "Solution pour perfusion"),
+    ("Infusionskonzentrat", "Concentré pour perfusion"),
+    ("Sirup", "Sirop"),
+    ("Lösung", "Solution"),
+    ("Tropfen", "Gouttes"),
+    ("Elixier", "Elixir"),
+    ("Augentropfen", "Collyre"),
+    ("Augensalbe", "Onguent oculaire"),
+    ("Augengel", "Gel oculaire"),
+    ("Ohrentropfen", "Gouttes auriculaires"),
+    ("Nasenspray", "Spray nasale"),
+    ("Nasenöl", "Huile nasale"),
+    ("Nasensalbe", "Onguent nasal"),
+    ("Salbe", "Onguent"),
+    ("Creme", "Crème"),
+    ("Crème", "Crème"),
+    ("Gel", "gel"),
+    ("Liniment", "Liniment"),
+    ("Lotion", "Lotion"),
+    ("Pflaster", "Pansement"),
+    ("Transdermpflaster", "Timbre transdermique"),
+    ("Tinktur", "Teinture"),
+    ("Suppositorien", "Suppositoires"),
+    ("Suppositorium", "Suppositoires"),
+    ("Zäpfchen", "Suppositoires"),
+    ("Pulver", "Poudre soluble"),
+    ("Granulat", "Granulé"),
+    ("Brausepulver", "Poudre effervescente"),
+    ("Inhalationslösung", "Solution d'inhalation"),
+    ("Dosieraerosol", "Nébuliseur-doseur"),
+];
+
 /// Galenic group → numeric OID.  Mirrors the Ruby `galenic_oids.yaml`.
 const GROUP_OID: &[(&str, u32)] = &[
     ("Tabletten", 10),
@@ -182,6 +250,15 @@ static FORM_TO_GROUP: Lazy<HashMap<&'static str, &'static str>> =
 
 static GROUP_TO_OID: Lazy<HashMap<&'static str, u32>> =
     Lazy::new(|| GROUP_OID.iter().copied().collect());
+
+static FORM_TO_FR: Lazy<HashMap<&'static str, &'static str>> =
+    Lazy::new(|| FORM_FR.iter().copied().collect());
+
+/// French description of a German galenic form (for `<DOSAGE_FORMF>`);
+/// `None` when the yaml catalogue carries no French text for it.
+pub fn form_fr(form: &str) -> Option<&'static str> {
+    FORM_TO_FR.get(form.trim()).copied()
+}
 
 pub fn group_by_form(form: &str) -> Option<&'static str> {
     FORM_TO_GROUP.get(form.trim()).copied()
@@ -247,6 +324,21 @@ mod tests {
     #[test]
     fn unknown_form_returns_none() {
         assert_eq!(group_by_form("ZZZ_NOT_A_FORM"), None);
+    }
+
+    #[test]
+    fn form_fr_translates_known_forms_only() {
+        assert_eq!(form_fr("Injektionssuspension"), Some("Suspension injectable"));
+        assert_eq!(form_fr("Filmtablette"), Some("Comprimés filmés"));
+        assert_eq!(form_fr("Tabl"), None, "abbreviations carry no French form");
+        // Every FORM_FR key must be a known galenic form, so the builder's
+        // DOSAGE_FORM / DOSAGE_FORMF pair always describes the same form.
+        for (de, _) in FORM_FR {
+            assert!(
+                group_by_form(de).is_some(),
+                "FORM_FR entry {de} is not in FORM_GROUP"
+            );
+        }
     }
 
     #[test]

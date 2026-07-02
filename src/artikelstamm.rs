@@ -342,19 +342,17 @@ impl Builder {
             }
             let built = if let Some((item, pkg)) = pack_by_ean.get(gtin.as_str()) {
                 Some(self.pharma_item(gtin, item, pkg, version))
+            } else if let Some(sm) = sm_by_ean.get(gtin.as_str()) {
+                // Swissmedic-registered pack absent from the BAG SL feed:
+                // build the full pharma ITEM by merging the register with
+                // Refdata + ZurRose — Ruby routes every GTIN whose no8 is in
+                // Packungen.xlsx through the pharma branch via
+                // `obj = @packs[no8].merge(obj)`, so these carry COMP/NAME,
+                // prices, PKG_SIZE, MEASURE, DOSAGE_FORM(F), IKSCAT and
+                // PRODNO (e.g. TWINRIX, dropped from the July 2026 SL feed).
+                self.swissmedic_item(gtin, sm)
             } else if let Some(it) = self.nonpharma_item(gtin) {
                 Some(it)
-            } else if !self.inputs.zurrose.contains_key(gtin)
-                && !self.inputs.refdata_pharma.contains_key(gtin)
-                && !self.inputs.refdata_nonpharma.contains_key(gtin)
-            {
-                // Pure Swissmedic pack (no BAG/Refdata/ZurRose) — emit it from
-                // the Swissmedic register, as oddb2xml does.  Guarding on the
-                // three sources being absent keeps the ZurRose-7680 skip in
-                // nonpharma_item authoritative (those must stay dropped).
-                sm_by_ean
-                    .get(gtin.as_str())
-                    .and_then(|sm| self.swissmedic_item(gtin, sm))
             } else {
                 None
             };
@@ -444,10 +442,12 @@ impl Builder {
             pkg.prices.pub_price.price.as_str(),
             zr.map(|z| z.pub_price.as_str()).unwrap_or(""),
         ]);
-        if !pexf.is_empty() && pexf != "0.00" {
+        // Like Ruby's pharma branch, "0.00" is a value, not an absence — the
+        // June Artikelstamm carried <PPUB>0.00</PPUB> on ZurRose-priced packs.
+        if !pexf.is_empty() {
             nodes.push(Node::leaf("PEXF", pexf));
         }
-        if !ppub.is_empty() && ppub != "0.00" {
+        if !ppub.is_empty() {
             nodes.push(Node::leaf("PPUB", ppub));
         }
 
@@ -461,7 +461,10 @@ impl Builder {
             }
             let (form, _, _) = galenic_for(&sm.sequence_name, &sm.einheit_swissmedic);
             if !form.is_empty() {
-                nodes.push(Node::leaf("DOSAGE_FORM", form));
+                nodes.push(Node::leaf("DOSAGE_FORM", form.clone()));
+                if let Some(fr) = crate::calc::form_fr(&form) {
+                    nodes.push(Node::leaf("DOSAGE_FORMF", fr));
+                }
             }
         }
 
@@ -486,10 +489,18 @@ impl Builder {
         if let Some(d) = deductible(&item.deductible, &item.deductible20) {
             nodes.push(Node::leaf("DEDUCTIBLE", d.to_string()));
         }
-        if let Some(sm) = sm {
-            if !sm.prodno.is_empty() {
-                nodes.push(Node::leaf("PRODNO", sm.prodno.clone()));
+        let atc = sm
+            .map(|s| s.atc_code.clone())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| item.atc_code.clone());
+        let mut prodno = sm.map(|s| s.prodno.clone()).unwrap_or_default();
+        if prodno.is_empty() {
+            if let Some(p) = self.vaccination_prodno(&atc) {
+                prodno = p;
             }
+        }
+        if !prodno.is_empty() {
+            nodes.push(Node::leaf("PRODNO", prodno.clone()));
         }
 
         // v6 <ARTSL>: BAG Indikationscodes.  Skipped on legacy v5.
@@ -519,10 +530,8 @@ impl Builder {
             csv_form,
             pkg.prices.exf_price.price.clone(),
             pkg.prices.pub_price.price.clone(),
-            sm.map(|s| s.prodno.clone()).unwrap_or_default(),
-            sm.map(|s| s.atc_code.clone())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| item.atc_code.clone()),
+            prodno,
+            atc,
             sm.map(|s| s.substance_swissmedic.clone()).unwrap_or_default(),
             item.org_gen_code.clone(),
             sm.map(|s| s.ith_swissmedic.clone())
@@ -653,11 +662,12 @@ impl Builder {
     }
 
     /// A pharma `<ITEM>` for a Swissmedic-registered pack that is absent from
-    /// BAG / Refdata / ZurRose.  Mirrors oddb2xml, which turns every Swissmedic
-    /// pack into an ITEM (`obj = @packs[no8]`); these carry the register's
-    /// PRODNO / ATC / substance / IT-code but no SL flag and no price.  Returns
-    /// `None` for veterinary packs (oddb2xml skips `Tierarzneimittel` /
-    /// "ad us vet").
+    /// the BAG SL feed.  Mirrors oddb2xml's pharma branch, which routes every
+    /// GTIN whose no8 is in Packungen.xlsx through `obj = @packs[no8].merge(obj)`
+    /// — the register supplies PKG_SIZE / MEASURE / DOSAGE_FORM(F) / IKSCAT /
+    /// PRODNO / company NAME while Refdata contributes the descriptions and the
+    /// company GLN and ZurRose the pharmacode and prices.  Returns `None` for
+    /// veterinary packs (oddb2xml skips `Tierarzneimittel` / "ad us vet").
     fn swissmedic_item(
         &self,
         gtin: &str,
@@ -668,19 +678,74 @@ impl Builder {
         if sm.is_tier || sm.list_code.contains("Tierarzneimittel") {
             return None;
         }
-        let name = sm.sequence_name.clone();
+        let refdata = self
+            .inputs
+            .refdata_pharma
+            .get(gtin)
+            .or_else(|| self.inputs.refdata_nonpharma.get(gtin));
+        let zr = self.inputs.zurrose.get(gtin);
 
-        let mut nodes: Vec<Node> = Vec::with_capacity(12);
+        let name = first_non_empty(&[
+            refdata.map(|r| r.desc_de.as_str()).unwrap_or(""),
+            zr.map(|z| z.description.as_str()).unwrap_or(""),
+            sm.sequence_name.as_str(),
+        ]);
+        let dscrf = refdata.map(|r| r.desc_fr.clone()).unwrap_or_default();
+        let dscri = refdata.map(|r| r.desc_it.clone()).unwrap_or_default();
+
+        let mut nodes: Vec<Node> = Vec::with_capacity(18);
         nodes.push(Node::leaf("GTIN", rjust13(gtin)));
+        if let Some(z) = zr {
+            if !z.pharmacode.is_empty() {
+                nodes.push(Node::leaf("PHAR", z.pharmacode.clone()));
+            }
+        }
+        // Ruby's pharma branch hard-codes SALECD "A" for register-backed packs.
         nodes.push(Node::leaf("SALECD", "A"));
         nodes.push(Node::leaf("DSCR", name.clone()));
-        nodes.push(Node::leaf("DSCRF", ""));
-        if !sm.company_name.is_empty() {
-            nodes.push(Node::nested(
-                "COMP",
-                vec![Node::leaf("NAME", truncate(&sm.company_name, 100))],
-            ));
+        nodes.push(Node::leaf("DSCRF", dscrf));
+        if self.opts.italian && !dscri.is_empty() {
+            nodes.push(Node::leaf("DSCRI", dscri));
         }
+
+        // <COMP> manufacturer (refdata GLN + name; Swissmedic name fallback).
+        let comp_name = first_non_empty(&[
+            refdata.map(|r| r.company_name.as_str()).unwrap_or(""),
+            sm.company_name.as_str(),
+        ]);
+        let comp_gln = refdata.map(|r| r.company_ean.clone()).unwrap_or_default();
+        if !comp_name.is_empty() || !comp_gln.is_empty() {
+            let mut comp: Vec<Node> = Vec::new();
+            if !comp_name.is_empty() {
+                comp.push(Node::leaf("NAME", truncate(&comp_name, 100)));
+            }
+            if !comp_gln.is_empty() {
+                comp.push(Node::leaf("GLN", comp_gln));
+            }
+            nodes.push(Node::nested("COMP", comp));
+        }
+
+        // Prices from ZurRose (no BAG SL entry by definition here).  Like the
+        // Ruby pharma branch, "0.00" is emitted as-is (June TWINRIX carried
+        // <PPUB>0.00</PPUB>); the Weleda/WALA Kapitel-70 group price fills a
+        // blank public price and restores the SL flag (issue #121).
+        let pexf = zr.map(|z| z.price.clone()).unwrap_or_default();
+        let mut ppub = zr.map(|z| z.pub_price.clone()).unwrap_or_default();
+        let weleda = self.inputs.weleda_sl.get(&rjust13(gtin));
+        if let Some(w) = weleda {
+            if ppub.is_empty() {
+                if let Some(p) = &w.price {
+                    ppub = p.clone();
+                }
+            }
+        }
+        if !pexf.is_empty() {
+            nodes.push(Node::leaf("PEXF", pexf.clone()));
+        }
+        if !ppub.is_empty() {
+            nodes.push(Node::leaf("PPUB", ppub.clone()));
+        }
+
         // Pack size / measure / galenic form from Swissmedic.
         if let Ok(n) = sm.package_size.trim().parse::<i64>() {
             nodes.push(Node::leaf("PKG_SIZE", n.to_string()));
@@ -688,9 +753,15 @@ impl Builder {
         if !sm.einheit_swissmedic.is_empty() {
             nodes.push(Node::leaf("MEASURE", sm.einheit_swissmedic.clone()));
         }
-        let (form, _, _) = galenic_for(&name, &sm.einheit_swissmedic);
+        let (form, _, _) = galenic_for(&sm.sequence_name, &sm.einheit_swissmedic);
         if !form.is_empty() {
             nodes.push(Node::leaf("DOSAGE_FORM", form.clone()));
+            if let Some(fr) = crate::calc::form_fr(&form) {
+                nodes.push(Node::leaf("DOSAGE_FORMF", fr));
+            }
+        }
+        if weleda.is_some() {
+            nodes.push(Node::leaf("SL_ENTRY", "true"));
         }
         // IKSCAT: XSD restricts to A-E.
         if let Some(c) = sm.swissmedic_category.chars().next() {
@@ -701,8 +772,14 @@ impl Builder {
         if self.inputs.lppv_ean13s.contains_key(gtin) {
             nodes.push(Node::leaf("LPPV", "true"));
         }
-        if !sm.prodno.is_empty() {
-            nodes.push(Node::leaf("PRODNO", sm.prodno.clone()));
+        let mut prodno = sm.prodno.clone();
+        if prodno.is_empty() {
+            if let Some(p) = self.vaccination_prodno(&sm.atc_code) {
+                prodno = p;
+            }
+        }
+        if !prodno.is_empty() {
+            nodes.push(Node::leaf("PRODNO", prodno.clone()));
         }
 
         // 7680-registered packs are pharma; anything else non-pharma.
@@ -713,20 +790,20 @@ impl Builder {
         };
 
         // Companion CSV row (matches the Ruby pharma row): PRODNO/ATC/substance/
-        // IT-code from Swissmedic, no price, not SL.
+        // IT-code from Swissmedic, prices from ZurRose, SL only via Weleda.
         let csv = vec![
             rjust13(gtin),
             name,
             sm.package_size.clone(),
             form,
-            String::new(),
-            String::new(),
-            sm.prodno.clone(),
+            pexf,
+            ppub,
+            prodno,
             sm.atc_code.clone(),
             sm.substance_swissmedic.clone(),
             String::new(),
             sm.ith_swissmedic.clone(),
-            String::new(),
+            if weleda.is_some() { "SL".to_string() } else { String::new() },
         ];
 
         Some(Item {
@@ -734,6 +811,24 @@ impl Builder {
             children: nodes,
             csv,
         })
+    }
+
+    /// Ruby's vaccination PRODNO patch: an item without a PRODNO whose ATC is
+    /// a vaccine code (`^J07`, but not the "other" group `J07AX`) borrows the
+    /// PRODNO of a Swissmedic pack with the same ATC, so the Elexis
+    /// vaccination list can still map it to a product.  Deterministic pick:
+    /// the pack with the smallest no8 (first Packungen.xlsx row).
+    fn vaccination_prodno(&self, atc: &str) -> Option<String> {
+        let atc = atc.trim();
+        if atc.is_empty() || !atc.starts_with("J07") || atc.starts_with("J07AX") {
+            return None;
+        }
+        self.inputs
+            .swissmedic_packages
+            .values()
+            .filter(|p| p.atc_code == atc && !p.prodno.is_empty())
+            .min_by(|a, b| a.no8.cmp(&b.no8))
+            .map(|p| p.prodno.clone())
     }
 }
 

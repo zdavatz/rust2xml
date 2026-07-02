@@ -226,6 +226,17 @@ emitting Italian would make the import fail with
 the Italian `<DSCRI>` leaves (for consumers using the oddb2xml-extended
 XSD).
 
+Every GTIN registered in the Swissmedic register (Packungen.xlsx) is
+emitted as a full pharma `<ITEM>` even when it is missing from the BAG
+SL feed: the register supplies `PKG_SIZE`, `MEASURE`, `DOSAGE_FORM` /
+`DOSAGE_FORMF`, `IKSCAT`, `PRODNO` and the company `NAME`, while Refdata
+contributes the descriptions and company `GLN` and ZurRose the `PHAR`
+and prices (mirroring oddb2xml's `@packs[no8].merge` pharma branch —
+e.g. vaccines like TWINRIX that were dropped from the SL). Vaccine packs
+(`ATC ^J07`, except `J07AX`) without an own PRODNO borrow the PRODNO of
+a register pack with the same ATC, so the Elexis vaccination list keeps
+resolving them.
+
 The `artikelstamm_*` files carry **no** `SHA256` attribute (matching
 oddb2xml). Every top-level element in the `oddb_*.xml` files carries a
 `SHA256` attribute whose

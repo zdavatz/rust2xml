@@ -418,10 +418,75 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
         },
     );
 
+    // TWINRIX case (July 2026 regression): a pack registered in the Swissmedic
+    // register but absent from the BAG SL feed, known to Refdata and ZurRose.
+    // Ruby routes it through the pharma branch (`obj = @packs[no8].merge(obj)`),
+    // so the ITEM must carry the merged COMP NAME+GLN, PHAR, prices (PPUB 0.00
+    // included), PKG_SIZE, MEASURE, DOSAGE_FORM(F), IKSCAT and PRODNO.
+    let twinrix_gtin = "7680005920034";
+    swissmedic_packages.insert(
+        "00592003".into(),
+        SwissmedicPackage {
+            no8: "00592003".into(),
+            ean13: twinrix_gtin.into(),
+            prodno: "0059201".into(),
+            swissmedic_category: "B".into(),
+            atc_code: "J07BC20".into(),
+            package_size: "1".into(),
+            einheit_swissmedic: "Fertigspritze(n)".into(),
+            sequence_name: "Twinrix 720/20, Injektionssuspension".into(),
+            company_name: "GlaxoSmithKline AG".into(),
+            ..Default::default()
+        },
+    );
+    let mut refdata_pharma = std::collections::HashMap::new();
+    refdata_pharma.insert(
+        twinrix_gtin.to_string(),
+        rust2xml::extractor::RefdataItem {
+            ean13: twinrix_gtin.into(),
+            desc_de: "TWINRIX 720/20 Inj Susp (n Fertspr) 1 ml".into(),
+            desc_fr: "TWINRIX 720/20 susp inj (n ser pré) 1 ml".into(),
+            company_ean: "7601001000674".into(),
+            ..Default::default()
+        },
+    );
+    let mut zurrose = std::collections::HashMap::new();
+    zurrose.insert(
+        twinrix_gtin.to_string(),
+        rust2xml::extractor::ZurroseItem {
+            data_origin: "zur_rose".into(),
+            ean13: twinrix_gtin.into(),
+            pharmacode: "1108362".into(),
+            price: "57.41".into(),
+            pub_price: "0.00".into(),
+            cmut: "1".into(),
+            ..Default::default()
+        },
+    );
+    // Vaccination PRODNO patch: a register pack WITHOUT a PRODNO whose ATC is
+    // a vaccine code (^J07, not J07AX) borrows the PRODNO of another pack with
+    // the same ATC (here TWINRIX's 0059201), so the Elexis Impfliste keeps
+    // resolving it to a product.
+    let vaccine_gtin = "7680001330017";
+    swissmedic_packages.insert(
+        "00133001".into(),
+        SwissmedicPackage {
+            no8: "00133001".into(),
+            ean13: vaccine_gtin.into(),
+            prodno: String::new(),
+            swissmedic_category: "B".into(),
+            atc_code: "J07BC20".into(),
+            sequence_name: "VACCINE ohne Prodno, Injektionssuspension".into(),
+            ..Default::default()
+        },
+    );
+
     let inputs = Inputs {
         bag,
         swissmedic_packages,
+        refdata_pharma,
         refdata_nonpharma,
+        zurrose,
         weleda_sl,
         release_date: "2026-07-01".into(),
         ..Default::default()
@@ -551,6 +616,41 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
             .starts_with(&format!("{weleda_gtin},Absinthium Tropfen 50 ml,,,,26.95,"))
             && l.ends_with(",SL")),
         "Weleda CSV row missing recovered price / SL flag"
+    );
+
+    // TWINRIX merged item: Swissmedic register + Refdata + ZurRose combined.
+    let twinrix_item = xml
+        .split("<ITEM ")
+        .find(|s| s.contains(&format!("<GTIN>{twinrix_gtin}</GTIN>")))
+        .expect("TWINRIX ITEM missing");
+    for expected in [
+        "<PHAR>1108362</PHAR>",
+        "<DSCR>TWINRIX 720/20 Inj Susp (n Fertspr) 1 ml</DSCR>",
+        "<DSCRF>TWINRIX 720/20 susp inj (n ser pré) 1 ml</DSCRF>",
+        "<NAME>GlaxoSmithKline AG</NAME>",
+        "<GLN>7601001000674</GLN>",
+        "<PEXF>57.41</PEXF>",
+        "<PPUB>0.00</PPUB>",
+        "<PKG_SIZE>1</PKG_SIZE>",
+        "<MEASURE>Fertigspritze(n)</MEASURE>",
+        "<DOSAGE_FORM>Injektionssuspension</DOSAGE_FORM>",
+        "<DOSAGE_FORMF>Suspension injectable</DOSAGE_FORMF>",
+        "<IKSCAT>B</IKSCAT>",
+        "<PRODNO>0059201</PRODNO>",
+    ] {
+        assert!(
+            twinrix_item.contains(expected),
+            "TWINRIX ITEM missing {expected}:\n{twinrix_item}"
+        );
+    }
+    // Vaccination patch: the prodno-less J07 pack borrows TWINRIX's PRODNO.
+    let vaccine_item = xml
+        .split("<ITEM ")
+        .find(|s| s.contains(&format!("<GTIN>{vaccine_gtin}</GTIN>")))
+        .expect("vaccine ITEM missing");
+    assert!(
+        vaccine_item.contains("<PRODNO>0059201</PRODNO>"),
+        "vaccination PRODNO patch not applied:\n{vaccine_item}"
     );
 
     // Validate against the committed v6 XSD when xmllint is available

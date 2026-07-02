@@ -758,15 +758,19 @@ impl ZurroseExtractor {
                 pharma_pat.captures(&line)
             };
             let caps = match caps { Some(c) => c, None => continue };
-            let bytes: &[u8] = line.as_bytes();
-            if bytes.len() < 97 {
+            // Slice by CHARS, not bytes: the line is decoded UTF-8, so an
+            // umlaut in the description ("Inj Lös") is two bytes and byte
+            // offsets would shift every following fixed-width column —
+            // corrupting the price fields (Ruby's `line[60, 6]` slices chars).
+            let chars: Vec<char> = line.chars().collect();
+            if chars.len() < 97 {
                 continue;
             }
             let safe_slice = |start: usize, end: usize| -> String {
-                if end > bytes.len() {
+                if end > chars.len() {
                     return String::new();
                 }
-                String::from_utf8_lossy(&bytes[start..end]).into_owned()
+                chars[start..end].iter().collect()
             };
 
             let pharma_code = safe_slice(3, 10);
@@ -1212,5 +1216,24 @@ mod tests {
         let v = e.to_vec();
         assert_eq!(v.len(), 1);
         assert_eq!(v[0].atc1, "A");
+    }
+
+    /// The fixed-width columns are CHAR offsets: a non-ASCII char in the
+    /// description ("Inj Lös") must not shift the price fields.  Real-world
+    /// regression: TRAUMEEL S (7680657880021) carries PEXF 181.26 / PPUB 0.00
+    /// in transfer.dat but byte-offset slicing produced 18.12 / 6000.00.
+    #[test]
+    fn zurrose_umlaut_description_does_not_shift_price_columns() {
+        let name = "TRAUMEEL S Inj Lös 100 Amp 2.2 ml";
+        let pad = " ".repeat(50 - name.chars().count());
+        let line = format!("1127225995{name}{pad}018126000000300B200110076806578800212");
+        assert_eq!(line.chars().count(), 97);
+        let e = ZurroseExtractor::new(line, true, false);
+        let h = e.to_hash();
+        let item = h.get("7680657880021").expect("row extracted");
+        assert_eq!(item.price, "181.26");
+        assert_eq!(item.pub_price, "0.00");
+        assert_eq!(item.description, "TRAUMEEL S Inj Lös 100 Amp 2.2 ml");
+        assert_eq!(item.pharmacode, "7225995");
     }
 }
