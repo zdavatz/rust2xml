@@ -465,6 +465,44 @@ jobs:
           path: rust2xml-*-macos-appstore.pkg
           if-no-files-found: ignore
 
+      # Uploading the .pkg only makes a *build* available in App Store
+      # Connect — it ships nothing.  A build reaches customers only once
+      # it is attached to an appStoreVersion record and that version is
+      # submitted for review.  Because this job previously stopped at the
+      # upload, builds accumulated unsubmitted: on 2026-07-27 there were
+      # nine VALID builds (3.1.16 … 3.1.28) sitting behind a single "1.0"
+      # version record that was still the only thing ever published.
+      #
+      # scripts/appstore_submit.py performs the rest over the API: wait
+      # for processing, declare export compliance, create/attach the
+      # version, set "What's New", then create and submit the review
+      # submission.  It is idempotent, so a re-run after a timeout or a
+      # transient API error is safe.
+      #
+      # continue-on-error: a submission problem (Apple processing slower
+      # than the timeout, metadata rejected, review already open) must not
+      # fail the release — the binaries and the GitHub Release are already
+      # good.  The step still shows up red in the run so it cannot pass
+      # silently, unlike a `|| echo WARNING` swallow.
+      - name: submit build for App Review
+        if: env.APPLE_API_KEY_P8 != '' && vars.APPSTORE_APP_ID != ''
+        continue-on-error: true
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          # Use a venv: the runner's python3 may be externally managed
+          # (PEP 668), which makes a plain `pip install` fail.
+          python3 -m venv "$RUNNER_TEMP/ascvenv"
+          "$RUNNER_TEMP/ascvenv/bin/python" -m pip install --quiet \
+            --disable-pip-version-check cryptography
+          "$RUNNER_TEMP/ascvenv/bin/python" scripts/appstore_submit.py \
+            --app-id "${{ vars.APPSTORE_APP_ID }}" \
+            --version "${{ steps.vars.outputs.version }}" \
+            --whats-new "$(git tag -l --format='%(contents:subject)' "v${{ steps.vars.outputs.version }}" || true)"
+
   # --- Windows MSIX (Microsoft Store) -----------------------------------
   # Packs the GUI binary into an MSIX using makeappx + AppxManifest.xml,
   # signs it (optional), and uploads it to Microsoft Store via the
