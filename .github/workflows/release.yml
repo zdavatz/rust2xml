@@ -616,6 +616,66 @@ jobs:
             minimumSystemRam = "None"
           }
 
+          # Store listing screenshots.  The Store keeps images across
+          # submissions: POST /submissions clones the last published
+          # listing *including* its images, which come back with
+          # fileStatus "Uploaded".  Sending `images = @()` here (as this
+          # step used to) therefore DELETED the listing's screenshots on
+          # every single release — which is why the live listing had
+          # decayed to one screenshot while seven sit in the repo, and
+          # why a submission can fail certification for having none.
+          #
+          # Preserve whatever the clone returned and append only the
+          # screenshots the listing does not carry yet; those ride along
+          # in the same upload zip as the MSIX.  Steady state uploads
+          # nothing: every file is already "Uploaded" on the clone.
+          $screenshotDir = "screenshots/windows"
+          $localShots = @()
+          if (Test-Path $screenshotDir) {
+            $localShots = Get-ChildItem "$screenshotDir/*.png" | Sort-Object Name
+          }
+
+          function Merge-ListingImages($cloned) {
+            $result = @()
+            $have = @()
+            if ($cloned) {
+              foreach ($img in $cloned) {
+                $result += $img
+                $have += $img.fileName
+              }
+            }
+            foreach ($shot in $localShots) {
+              if ($have -notcontains $shot.Name) {
+                $result += @{
+                  fileName    = $shot.Name
+                  fileStatus  = "PendingUpload"
+                  imageType   = "Screenshot"
+                  description = "rust2xml desktop GUI"
+                }
+              }
+            }
+            # Comma operator: keep a single-element result an array so
+            # ConvertTo-Json emits [ ... ] rather than a bare object.
+            return ,$result
+          }
+
+          $clonedDe = $null
+          $clonedEn = $null
+          if ($subResp.listings) {
+            if ($subResp.listings.'de-de') { $clonedDe = $subResp.listings.'de-de'.baseListing.images }
+            if ($subResp.listings.'en-us') { $clonedEn = $subResp.listings.'en-us'.baseListing.images }
+          }
+          $imagesDe = Merge-ListingImages $clonedDe
+          $imagesEn = Merge-ListingImages $clonedEn
+
+          $pendingShots = @()
+          foreach ($img in ($imagesDe + $imagesEn)) {
+            if ($img.fileStatus -eq "PendingUpload" -and $pendingShots -notcontains $img.fileName) {
+              $pendingShots += $img.fileName
+            }
+          }
+          Write-Host "Listing screenshots: de-de=$($imagesDe.Count) en-us=$($imagesEn.Count); uploading $($pendingShots.Count) new file(s)"
+
           $updateBody = @{
             targetPublishMode = "Immediate"
             targetPublishDate = ""
@@ -632,7 +692,7 @@ jobs:
                   privacyPolicy = "https://ywesee.com/Rust2Xml/Rust2Xml"
                   websiteUrl = "https://ywesee.com/Rust2Xml/Rust2Xml"
                   supportContact = "zdavatz@ywesee.com"
-                  images = @()
+                  images = $imagesDe
                 }
               }
               "en-us" = @{
@@ -646,7 +706,7 @@ jobs:
                   privacyPolicy = "https://ywesee.com/Rust2Xml/Rust2Xml"
                   websiteUrl = "https://ywesee.com/Rust2Xml/Rust2Xml"
                   supportContact = "zdavatz@ywesee.com"
-                  images = @()
+                  images = $imagesEn
                 }
               }
             }
@@ -675,8 +735,22 @@ jobs:
             -Headers $headers -Body $updateBody `
             -ContentType "application/json; charset=utf-8"
 
+          # The submission zip carries the MSIX plus any screenshot the
+          # listing does not have yet.  Compress-Archive stores each file
+          # at the archive root under its base name, which is exactly the
+          # `fileName` the images entries above reference.
           $zipPath = [System.IO.Path]::Combine($env:TEMP, "upload.zip")
-          Compress-Archive -Path $msix.FullName -DestinationPath $zipPath -Force
+          $toZip = @($msix.FullName)
+          foreach ($name in $pendingShots) {
+            $shotPath = Join-Path $screenshotDir $name
+            if (Test-Path $shotPath) {
+              $toZip += (Resolve-Path $shotPath).Path
+            } else {
+              Write-Host "WARNING: listing references $name but the file is missing"
+            }
+          }
+          Write-Host "Zipping $($toZip.Count) file(s) for submission $subId"
+          Compress-Archive -Path $toZip -DestinationPath $zipPath -Force
           $zipBytes = [System.IO.File]::ReadAllBytes($zipPath)
           Invoke-RestMethod -Method Put -Uri $uploadUrl `
             -Headers @{"x-ms-blob-type" = "BlockBlob"} `
