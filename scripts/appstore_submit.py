@@ -133,7 +133,23 @@ def wait_for_build(app_id: str, version: str, timeout_s: int, poll_s: int):
         time.sleep(poll_s)
 
 
-def find_or_create_version(app_id: str, version: str) -> str:
+# States in which the version is already submitted or shipped. Apple locks
+# the build relationship once a version is in review, so re-running against
+# one of these is a no-op rather than an error (a release re-run must not go
+# red just because the version is already on its way).
+ALREADY_SUBMITTED = {
+    "WAITING_FOR_REVIEW",
+    "IN_REVIEW",
+    "PENDING_APPLE_RELEASE",
+    "PENDING_DEVELOPER_RELEASE",
+    "PROCESSING_FOR_APP_STORE",
+    "READY_FOR_SALE",
+    "ACCEPTED",
+}
+
+
+def find_or_create_version(app_id: str, version: str):
+    """Return (version_id, state). state is None for a freshly created record."""
     st, resp = call(
         "GET",
         f"/v1/apps/{app_id}/appStoreVersions"
@@ -145,7 +161,7 @@ def find_or_create_version(app_id: str, version: str) -> str:
             "appVersionState"
         )
         print(f"  reusing existing version record {existing['id']} (state {state})")
-        return existing["id"]
+        return existing["id"], state
 
     st, resp = call(
         "POST",
@@ -165,7 +181,7 @@ def find_or_create_version(app_id: str, version: str) -> str:
     if st not in (200, 201):
         fail(f"creating version {version} failed (HTTP {st}): {errors_of(resp)}", resp)
     print(f"  created version record {resp['data']['id']}")
-    return resp["data"]["id"]
+    return resp["data"]["id"], None
 
 
 def main() -> None:
@@ -195,22 +211,39 @@ def main() -> None:
     # Export compliance. rust2xml only performs HTTPS/TLS requests and SHA-256
     # hashing, with no proprietary or non-standard cryptography, so it does not
     # use non-exempt encryption. Without this the submission is blocked.
-    st, resp = call(
-        "PATCH",
-        f"/v1/builds/{build_id}",
-        {
-            "data": {
-                "type": "builds",
-                "id": build_id,
-                "attributes": {"usesNonExemptEncryption": False},
-            }
-        },
-    )
-    if st not in (200, 204):
-        fail(f"setting export compliance failed (HTTP {st}): {errors_of(resp)}", resp)
-    print("Export compliance declared (no non-exempt encryption)")
+    #
+    # Apple rejects re-setting the flag ("You cannot update when the value is
+    # already set", HTTP 409), so only PATCH when it is still null — otherwise
+    # every re-run would fail here.
+    st, resp = call("GET", f"/v1/builds/{build_id}")
+    if st != 200:
+        fail(f"reading build failed (HTTP {st})", resp)
+    current = resp["data"]["attributes"].get("usesNonExemptEncryption")
+    if current is None:
+        st, resp = call(
+            "PATCH",
+            f"/v1/builds/{build_id}",
+            {
+                "data": {
+                    "type": "builds",
+                    "id": build_id,
+                    "attributes": {"usesNonExemptEncryption": False},
+                }
+            },
+        )
+        if st not in (200, 204):
+            fail(f"setting export compliance failed (HTTP {st}): {errors_of(resp)}", resp)
+        print("Export compliance declared (no non-exempt encryption)")
+    else:
+        print(f"Export compliance already declared (usesNonExemptEncryption={current})")
 
-    version_id = find_or_create_version(args.app_id, args.version)
+    version_id, version_state = find_or_create_version(args.app_id, args.version)
+    if version_state in ALREADY_SUBMITTED:
+        print(
+            f"Version {args.version} is already {version_state} — nothing to submit. "
+            "(Apple locks the build relationship once a version is in review.)"
+        )
+        return
 
     st, resp = call(
         "PATCH",
