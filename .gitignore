@@ -32,3 +32,7 @@ firstbase.csv
 medregbm_*.txt
 epha_interactions.csv
 oddb2xml_files_lppv.txt
+
+# Python bytecode (scripts/appstore_submit.py)
+__pycache__/
+*.pyc
