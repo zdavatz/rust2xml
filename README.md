@@ -237,6 +237,27 @@ e.g. vaccines like TWINRIX that were dropped from the SL). Vaccine packs
 a register pack with the same ATC, so the Elexis vaccination list keeps
 resolving them.
 
+### Rogger Mediliste (`-r` / `--rogger`)
+
+The "Rogger Mediliste" is the name-conflict list maintained by Frau
+Rogger (Vitabyte / Zur Rose): a curated `GTIN,Mediname` mapping of
+preferred German article names. With `-r` / `--rogger`, every listed
+GTIN gets its German Refdata description replaced by the list's name —
+in `oddb_article.xml` (`<DSCRD>` / `<SORTD>`), `oddb_product.xml` and
+the Artikelstamm alike. The list is German-only: `<DSCRF>` / `<DSCRI>`
+are never touched.
+
+The source of truth is the shared Google Sheet, fetched as its CSV
+export at run time, so edits there reach the feeds without a release.
+A bundled `data/rogger_liste.csv` is embedded in the binary and used
+whenever the download is unavailable (offline, allow-list proxy) or
+does not look like the expected CSV — e.g. the sign-in page Google
+serves once the sheet stops being shared as "anyone with the link can
+view". The override is applied *after* the [issue #112][i112] Refdata
+cleanups, so the curated name always wins.
+
+[i112]: https://github.com/zdavatz/oddb2xml/issues/112
+
 The `artikelstamm_*` files carry **no** `SHA256` attribute (matching
 oddb2xml). Every top-level element in the `oddb_*.xml` files carries a
 `SHA256` attribute whose
@@ -245,8 +266,8 @@ detect unchanged nodes between runs (same contract as the Ruby gem).
 
 ## Option parity with the Ruby gem
 
-Every flag from `lib/oddb2xml/options.rb` has a 1:1 Rust equivalent,
-including optimist's auto-assigned short flags:
+Every flag from `lib/oddb2xml/options.rb` has a 1:1 Rust equivalent
+except `--proxy-check`, including optimist's auto-assigned short flags:
 
 | Flag | Short | Purpose |
 |---|---|---|
@@ -271,6 +292,7 @@ including optimist's auto-assigned short flags:
 | `--log` | | Log important actions |
 | `--use-ra11zip <PATH>` | | Use a zipped `transfer.dat` from Galexis |
 | `--firstbase` | `-b` | NONPHARMA via GS1 Switzerland CSV |
+| `--rogger` | `-r` | Prefer the German article names from the "Rogger Mediliste" |
 
 Implied-flag cascade (same behaviour as Ruby):
 - `--increment N` → sets `nonpharma`, `price=zurrose`, `ean14=true`, `percent=N`

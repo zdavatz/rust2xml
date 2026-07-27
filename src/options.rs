@@ -68,6 +68,11 @@ pub struct Options {
     pub log: bool,
     pub use_ra11zip: Option<String>,
     pub firstbase: bool,
+    /// `-r` / `--rogger`: prefer the German article names from the
+    /// "Rogger Mediliste" (Vitabyte / Zur Rose name-conflict corrections,
+    /// fetched from the shared Google Sheet with a bundled offline
+    /// fallback).  See [`crate::rogger_names`].
+    pub rogger: bool,
     /// Optional path for the BAG Indikationscode XLSX export.  When set,
     /// rust2xml writes one row per (code, GTIN) pair to this path after
     /// the normal pipeline finishes.  Requires `fhir` (or `fhir_url`)
@@ -100,6 +105,7 @@ impl Default for Options {
             log: false,
             use_ra11zip: None,
             firstbase: false,
+            rogger: false,
             indc_xlsx: None,
             transfer_dat: None,
         }
@@ -206,6 +212,12 @@ struct RawArgs {
     #[arg(short = 'b', long = "firstbase", action = ArgAction::SetTrue)]
     firstbase: bool,
 
+    /// Prefer the German article names from the Rogger list
+    /// (Vitabyte/Zur Rose name-conflict corrections, fetched directly
+    /// from the shared 'Rogger Mediliste' Google Sheet)
+    #[arg(short = 'r', long = "rogger", action = ArgAction::SetTrue)]
+    rogger: bool,
+
     /// Write a BAG Indikationscode export to <PATH> (XLSX). One row per
     /// (XXXXX.NN code, GTIN) pair with brand name, pack description,
     /// ATC, ex-factory + public price, and the indication text.
@@ -249,6 +261,7 @@ impl Options {
         opts.log = raw.log;
         opts.use_ra11zip = raw.use_ra11zip;
         opts.firstbase = raw.firstbase;
+        opts.rogger = raw.rogger;
         opts.indc_xlsx = raw.indc_xlsx;
 
         if let Some(pct) = raw.increment {
@@ -429,6 +442,17 @@ mod tests {
         assert!(Options::parse(["--artikelstamm", "--italian"]).unwrap().italian);
         assert!(Options::parse(["--artikelstamm", "--it"]).unwrap().italian,
             "--it alias enables Italian");
+    }
+
+    #[test]
+    fn rogger_is_off_by_default_and_opt_in() {
+        assert!(!Options::parse([] as [&str; 0]).unwrap().rogger,
+            "Rogger name overrides off by default");
+        assert!(Options::parse(["-r"]).unwrap().rogger, "-r short flag");
+        assert!(Options::parse(["--rogger"]).unwrap().rogger, "--rogger long flag");
+        // Purely additive: it must not drag in any other flag.
+        let o = Options::parse(["--rogger"]).unwrap();
+        assert!(!o.extended && !o.nonpharma && !o.calc && o.price.is_none());
     }
 
     #[test]

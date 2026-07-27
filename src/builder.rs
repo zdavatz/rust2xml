@@ -96,6 +96,10 @@ pub struct Inputs {
     /// Weleda / WALA Kapitel-70 SL recovery: GTIN → SL flag + BAG group price
     /// for complementary medicines missing from the FHIR feed (issue #121).
     pub weleda_sl: HashMap<String, crate::weleda_sl::WeledaEntry>,
+    /// `-r`/`--rogger`: GTIN → preferred German article name from the
+    /// "Rogger Mediliste".  Empty unless the flag was given; applied to the
+    /// Refdata descriptions in [`Builder::new`].
+    pub rogger_names: crate::rogger_names::RoggerMap,
     pub release_date: String,
 }
 
@@ -107,6 +111,11 @@ pub struct Builder {
 impl Builder {
     pub fn new(opts: Options, mut inputs: Inputs) -> Self {
         crate::refdata_cleanup::apply(&mut inputs);
+        // -r/--rogger runs *after* the issue-#112 cleanups so the curated
+        // list always wins over them, matching Ruby's ordering at the end of
+        // `Builder#apply_refdata_description_cleanups!`.  No-op when the flag
+        // was not given (the map is then empty).
+        crate::rogger_names::apply(&mut inputs);
         Self { opts, inputs }
     }
 

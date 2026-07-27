@@ -23,6 +23,7 @@ pub mod gui;
 pub mod options;
 pub mod parslet_compositions;
 pub mod refdata_cleanup;
+pub mod rogger_names;
 pub mod semantic_check;
 pub mod sqlite_export;
 pub mod util;

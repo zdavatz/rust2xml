@@ -297,6 +297,28 @@ impl Cli {
             })));
         }
 
+        // -r/--rogger: preferred German article names from the "Rogger
+        // Mediliste" Google Sheet.  An unusable download (offline, sheet no
+        // longer link-shared → HTML sign-in page) falls back to the bundled
+        // data/rogger_liste.csv, so this job never fails the run.
+        if self.opts.rogger {
+            jobs.push(("Rogger Mediliste", Box::new(|store: &Mutex<Inputs>| {
+                let downloaded = downloader::RoggerDownloader::new()
+                    .and_then(|d| d.download())
+                    .map(|b| String::from_utf8_lossy(&b).into_owned())
+                    .map_err(|e| {
+                        crate::util::log(format!(
+                            "RoggerNames: download of rogger_liste.csv failed ({e})"
+                        ));
+                        e
+                    })
+                    .ok();
+                let map = crate::rogger_names::load(downloaded.as_deref());
+                store.lock().unwrap().rogger_names.extend(map);
+                Ok(())
+            })));
+        }
+
         // Swissmedic packages.xlsx — supplies GTIN, PRODNO, IT,
         // PackGrSwissmedic, EinheitSwissmedic, SubstanceSwissmedic,
         // CompositionSwissmedic per no8.

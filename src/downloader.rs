@@ -262,6 +262,34 @@ impl BagSlGroupPricesDownloader {
     }
 }
 
+/// "Rogger Mediliste": GTIN → preferred German article name (Vitabyte / Zur
+/// Rose name-conflict corrections). Fetched directly as the CSV export of the
+/// shared Google Sheet that is the source of truth, so edits there reach the
+/// feeds without any release step. The sheet must be shared as "anyone with
+/// the link can view" — otherwise Google serves a sign-in page and
+/// [`crate::rogger_names::load`] falls back to the bundled copy.
+pub struct RoggerDownloader {
+    pub base: BaseDownloader,
+}
+
+impl RoggerDownloader {
+    pub const SHEET_ID: &'static str = "1NXJZ8KYzVsX0OQU767tl_AwCyvFVieHWnTWXqhflwdc";
+
+    pub fn new() -> Result<Self> {
+        Ok(Self {
+            base: BaseDownloader::new(format!(
+                "https://docs.google.com/spreadsheets/d/{}/export?format=csv&gid=0",
+                Self::SHEET_ID
+            ))?,
+        })
+    }
+
+    pub fn download(&self) -> Result<Vec<u8>> {
+        let path = util::work_dir().join("rogger_liste.csv");
+        download_as(&self.base.client, &self.base.url, &path)
+    }
+}
+
 pub struct BagXmlDownloader {
     pub base: BaseDownloader,
 }

@@ -670,3 +670,105 @@ fn artikelstamm_v6_emits_products_limitations_items_and_artsl() {
     }
     let _ = std::fs::remove_file(&path);
 }
+
+/// `-r`/`--rogger`: the curated "Rogger Mediliste" name replaces the German
+/// Refdata description end-to-end, wins over the issue-#112 Refdata cleanups
+/// (it is applied last, like Ruby's `apply_rogger_name_overrides!`), and
+/// leaves the French description untouched.
+#[test]
+fn rogger_names_override_german_description_and_win_over_refdata_cleanup() {
+    use rust2xml::extractor::swissmedic::SwissmedicPackage;
+    use rust2xml::extractor::RefdataItem;
+
+    // This GTIN is on the real bundled Rogger list.
+    let gtin = "7680680690017";
+    let no8 = "68069001";
+    let preferred = "EZETIMIB ROSUVA Spirig HC Filmtab 10/10mg 30 Stk";
+
+    // A description that the issue-#112 double-dose cleanup *would* rewrite
+    // ("30 mg / 30 mg /" → "30 mg /"), so a passing assertion proves the
+    // Rogger name is applied after — and wins over — that cleanup.
+    let refdata_desc = "MIRTAZAPIN Sandoz eco 30 mg / 30 mg / 100 Tablette";
+
+    let mut refdata_pharma = std::collections::HashMap::new();
+    refdata_pharma.insert(
+        gtin.to_string(),
+        RefdataItem {
+            ean13: gtin.into(),
+            no8: no8.into(),
+            refdata: true,
+            r#type: "PHARMA".into(),
+            desc_de: refdata_desc.into(),
+            desc_fr: "MIRTAZAPINE Sandoz eco 30 mg / 30 mg / 100 comprimé".into(),
+            ..Default::default()
+        },
+    );
+
+    // Single active substance → the double-dose cleanup is allowed to fire.
+    let mut swissmedic_packages = std::collections::HashMap::new();
+    swissmedic_packages.insert(
+        no8.to_string(),
+        SwissmedicPackage {
+            no8: no8.into(),
+            ean13: gtin.into(),
+            substance_swissmedic: "mirtazapinum".into(),
+            sequence_name: "MIRTAZAPIN Sandoz eco".into(),
+            ..Default::default()
+        },
+    );
+
+    let rogger_names = rust2xml::rogger_names::load(None);
+    assert!(
+        rogger_names.contains_key(gtin),
+        "bundled Rogger list should carry the fixture GTIN"
+    );
+
+    let make = |names: rust2xml::rogger_names::RoggerMap| {
+        Builder::new(
+            Options::default(),
+            Inputs {
+                refdata_pharma: refdata_pharma.clone(),
+                swissmedic_packages: swissmedic_packages.clone(),
+                rogger_names: names,
+                release_date: "2026-07-27".into(),
+                ..Default::default()
+            },
+        )
+    };
+
+    // With -r: the curated name reaches <DSCRD>, the Refdata one is gone.
+    let with_rogger = make(rogger_names).build_article().unwrap();
+    assert!(
+        with_rogger.contains(&format!("<DSCRD>{preferred}</DSCRD>")),
+        "Rogger name not emitted:\n{with_rogger}"
+    );
+    assert!(
+        !with_rogger.contains("MIRTAZAPIN Sandoz eco 30 mg"),
+        "Refdata description survived the Rogger override:\n{with_rogger}"
+    );
+    // German-only: French keeps its Refdata-derived value.  (It still shows
+    // the issue-#112 double-dose cleanup, which is language-agnostic — what
+    // matters is that the Rogger name never reaches DSCRF.)
+    assert!(
+        with_rogger.contains("<DSCRF>MIRTAZAPINE Sandoz eco 30 mg / 100 comprimé</DSCRF>"),
+        "French description must stay the Refdata one:\n{with_rogger}"
+    );
+    assert_eq!(
+        with_rogger.matches(preferred).count(),
+        1,
+        "Rogger name must appear only in DSCRD (SORTD is uppercased), never in DSCRF:\n{with_rogger}"
+    );
+
+    // Without -r (empty map): the issue-#112 cleanup result stands.
+    let without = make(rust2xml::rogger_names::RoggerMap::new())
+        .build_article()
+        .unwrap();
+    assert!(
+        !without.contains(preferred),
+        "Rogger name leaked in without the flag:\n{without}"
+    );
+    assert!(
+        without.contains("<DSCRD>MIRTAZAPIN Sandoz eco 30 mg / 100 Tablette</DSCRD>"),
+        "expected the double-dose cleanup result without -r:\n{without}"
+    );
+}
