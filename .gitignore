@@ -8,7 +8,12 @@ Cargo.lock.bak
 .DS_Store
 .idea/
 .vscode/
-.claude/
+# Keep local Claude Code state out of the repo, but DO share project
+# skills. Must be `.claude/*` rather than `.claude/`: git never descends
+# into an excluded directory, so a `!` negation under `.claude/` would
+# silently have no effect.
+.claude/*
+!.claude/skills/
 *.swp
 *.bak
 
