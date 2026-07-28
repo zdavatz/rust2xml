@@ -32,9 +32,10 @@ impl Cli {
         Self { opts }
     }
 
-    /// Run the same download/extract pipeline as `run()`, but write
-    /// the result into a SQLite database at `sqlite_path` instead of
-    /// emitting XML files.  Used by the GUI binary.
+    /// Run the same download/extract pipeline as `run()`, writing the
+    /// result into a SQLite database at `sqlite_path` *and* emitting
+    /// the usual XML files into `~/rust2xml/xml/`.  Used by the GUI
+    /// binary.
     pub fn run_to_sqlite(self, sqlite_path: &std::path::Path) -> Result<()> {
         util::save_options(util::GlobalOptions {
             skip_download: self.opts.skip_download,
@@ -50,8 +51,70 @@ impl Cli {
         let b = Builder::new(self.opts.clone(), inputs);
         util::progress(0.92, "Writing SQLite database");
         crate::sqlite_export::write_sqlite(&b, sqlite_path)?;
+
+        // GUI runs leave the same XML files in ~/rust2xml/xml/ as the
+        // CLI does — the seven oddb_*.xml outputs plus, for the
+        // Artikelstamm modes, the Elexis XML + companion CSV.
+        util::progress(0.95, "Writing XML files");
+        for path in self.write_xml_files(&b)? {
+            util::log(format!("XML written: {}", path.display()));
+        }
         util::progress(1.0, "Done");
         Ok(())
+    }
+
+    /// Write the standard oddb XML outputs — and, when
+    /// `opts.artikelstamm` is set, the Elexis Artikelstamm XML +
+    /// companion CSV — into `~/rust2xml/xml/`.  Shared by `run()`
+    /// (Format::Xml) and `run_to_sqlite()`.
+    fn write_xml_files(&self, b: &Builder) -> Result<Vec<PathBuf>> {
+        type BuildFn = fn(&Builder) -> Result<String>;
+        let mut jobs: Vec<(&str, BuildFn)> = vec![
+            ("oddb_product.xml", Builder::build_product),
+            ("oddb_article.xml", Builder::build_article),
+            ("oddb_substance.xml", Builder::build_substance),
+            ("oddb_limitation.xml", Builder::build_limitation),
+            ("oddb_interaction.xml", Builder::build_interaction),
+            ("oddb_code.xml", Builder::build_code),
+        ];
+        if self.opts.calc || self.opts.extended {
+            jobs.push(("oddb_calc.xml", Builder::build_calc));
+        }
+        let xml_dir = util::home_xml_dir();
+        let mut outputs: Vec<PathBuf> = jobs
+            .par_iter()
+            .map(|(name, task)| {
+                let xml = task(b)?;
+                let path = xml_dir.join(*name);
+                fs::write(&path, xml)
+                    .with_context(|| format!("writing {}", path.display()))?;
+                Ok(path)
+            })
+            .collect::<Result<Vec<PathBuf>>>()?;
+
+        // Elexis Artikelstamm v6 (+ companion CSV) for `--artikelstamm`.
+        // Bespoke three-section shape.  v6 (default) plus, when
+        // --artikelstamm-v5 is set, the legacy v5 (no <ARTSL>).
+        if self.opts.artikelstamm {
+            let mut versions: Vec<u8> = vec![6];
+            if self.opts.artikelstamm_v5 {
+                versions.push(5);
+            }
+            for version in versions {
+                let xml = b.build_artikelstamm(version)?;
+                let xml_path = xml_dir.join(format!("artikelstamm_v{version}.xml"));
+                fs::write(&xml_path, xml)
+                    .with_context(|| format!("writing {}", xml_path.display()))?;
+                outputs.push(xml_path);
+
+                let csv = b.artikelstamm_csv();
+                let csv_path = xml_dir.join(format!("artikelstamm_v{version}.csv"));
+                fs::write(&csv_path, csv)
+                    .with_context(|| format!("writing {}", csv_path.display()))?;
+                outputs.push(csv_path);
+            }
+        }
+        Ok(outputs)
     }
 
     pub fn run(self) -> Result<Vec<PathBuf>> {
@@ -75,58 +138,7 @@ impl Cli {
 
         match self.opts.format {
             Format::Xml => {
-                type BuildFn = fn(&Builder) -> Result<String>;
-                let mut jobs: Vec<(&str, BuildFn)> = vec![
-                    ("oddb_product.xml", Builder::build_product),
-                    ("oddb_article.xml", Builder::build_article),
-                    ("oddb_substance.xml", Builder::build_substance),
-                    ("oddb_limitation.xml", Builder::build_limitation),
-                    ("oddb_interaction.xml", Builder::build_interaction),
-                    ("oddb_code.xml", Builder::build_code),
-                ];
-                if self.opts.calc || self.opts.extended {
-                    jobs.push(("oddb_calc.xml", Builder::build_calc));
-                }
-                let xml_dir = util::home_xml_dir();
-                let built: Result<Vec<PathBuf>> = jobs
-                    .par_iter()
-                    .map(|(name, task)| {
-                        let xml = task(&b)?;
-                        let path = xml_dir.join(*name);
-                        fs::write(&path, xml)
-                            .with_context(|| format!("writing {}", path.display()))?;
-                        Ok(path)
-                    })
-                    .collect();
-                outputs.extend(built?);
-
-                // Elexis Artikelstamm v6 (+ companion CSV) for `-as` /
-                // `--artikelstamm`.  Bespoke three-section shape, dated
-                // filename (`artikelstamm_DDMMYYYY_v6.xml`).
-                if self.opts.artikelstamm {
-                    // v6 (default) plus, when --artikelstamm-v5 is set, the
-                    // legacy v5 (no <ARTSL>).  The companion CSV is identical
-                    // across versions, so it's written once per version.
-                    let mut versions: Vec<u8> = vec![6];
-                    if self.opts.artikelstamm_v5 {
-                        versions.push(5);
-                    }
-                    for version in versions {
-                        let xml = b.build_artikelstamm(version)?;
-                        let xml_path = xml_dir
-                            .join(format!("artikelstamm_v{version}.xml"));
-                        fs::write(&xml_path, xml)
-                            .with_context(|| format!("writing {}", xml_path.display()))?;
-                        outputs.push(xml_path);
-
-                        let csv = b.artikelstamm_csv();
-                        let csv_path = xml_dir
-                            .join(format!("artikelstamm_v{version}.csv"));
-                        fs::write(&csv_path, csv)
-                            .with_context(|| format!("writing {}", csv_path.display()))?;
-                        outputs.push(csv_path);
-                    }
-                }
+                outputs.extend(self.write_xml_files(&b)?);
             }
             Format::Dat => {
                 let path = util::home_xml_dir().join("oddb.dat");

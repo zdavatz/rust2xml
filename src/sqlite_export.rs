@@ -249,7 +249,7 @@ pub fn write_sqlite(b: &Builder, path: &Path) -> Result<()> {
 
 /// Build the timestamped filename `rust2xml_<flag>_HHMM_DD.MM.YYYY.sqlite`.
 /// `flag` is the single-letter option (`'e'` or `'b'`).
-pub fn timestamped_filename(flag: char, now: chrono::DateTime<chrono::Local>) -> String {
+pub fn timestamped_filename(flag: &str, now: chrono::DateTime<chrono::Local>) -> String {
     format!(
         "rust2xml_{}_{}_{}.sqlite",
         flag,
@@ -271,8 +271,12 @@ mod tests {
             .single()
             .unwrap();
         assert_eq!(
-            timestamped_filename('e', dt),
+            timestamped_filename("e", dt),
             "rust2xml_e_1430_25.04.2026.sqlite"
+        );
+        assert_eq!(
+            timestamped_filename("as6", dt),
+            "rust2xml_as6_1430_25.04.2026.sqlite"
         );
     }
 

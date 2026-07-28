@@ -31,6 +31,13 @@ fn main() -> eframe::Result<()> {
     }
     let options = eframe::NativeOptions {
         viewport,
+        // Don't restore the previous session's window geometry.  When
+        // the app quits in macOS fullscreen, restoring that state on
+        // relaunch can leave the window on a half-attached fullscreen
+        // Space: the UI looks present but clicks land on whatever is
+        // really under the cursor ("buttons do nothing").  A fresh
+        // 1280x800 window every launch avoids that entirely.
+        persist_window: false,
         ..Default::default()
     };
     eframe::run_native(

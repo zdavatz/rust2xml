@@ -1,8 +1,11 @@
 //! egui-based desktop UI for rust2xml.
 //!
-//! Two big buttons (`-e (Extended)` and `-b (Firstbase)`) trigger a
-//! download/extract/SQLite-write pipeline in a worker thread, with a
-//! live status line and a tabbed table viewer for the resulting DB.
+//! Four run buttons (`-e (Extended)`, `-b (Firstbase)`, `Artikelstamm
+//! v6` and `Artikelstamm v5`) trigger a download/extract/SQLite-write
+//! pipeline in a worker thread, with a live status line and a tabbed
+//! table viewer for the resulting DB.  The Artikelstamm modes also
+//! leave the Elexis XML (+ CSV) in `~/rust2xml/xml/`, mirroring the
+//! CLI's `--artikelstamm` / `--artikelstamm-v5` flags.
 
 use crate::cli::Cli;
 use crate::options::{Options, PriceSource};
@@ -28,19 +31,29 @@ enum Event {
 enum RunMode {
     Extended,
     Firstbase,
+    /// `--artikelstamm`: Elexis Artikelstamm v6 XML + CSV alongside
+    /// the SQLite browser DB.
+    ArtikelstammV6,
+    /// `--artikelstamm-v5`: additive like the CLI flag — emits the
+    /// legacy v5 (no `<ARTSL>`) *and* the v6.
+    ArtikelstammV5,
 }
 
 impl RunMode {
-    fn flag(&self) -> char {
+    fn flag(&self) -> &'static str {
         match self {
-            RunMode::Extended => 'e',
-            RunMode::Firstbase => 'b',
+            RunMode::Extended => "e",
+            RunMode::Firstbase => "b",
+            RunMode::ArtikelstammV6 => "as6",
+            RunMode::ArtikelstammV5 => "as5",
         }
     }
     fn label(&self) -> &'static str {
         match self {
             RunMode::Extended => "-e (Extended)",
             RunMode::Firstbase => "-b (Firstbase)",
+            RunMode::ArtikelstammV6 => "Artikelstamm v6",
+            RunMode::ArtikelstammV5 => "Artikelstamm v5",
         }
     }
     fn apply_to(&self, opts: &mut Options) {
@@ -58,6 +71,17 @@ impl RunMode {
                 opts.firstbase = true;
                 opts.nonpharma = true;
                 opts.calc = true;
+            }
+            RunMode::ArtikelstammV6 | RunMode::ArtikelstammV5 => {
+                // Mirror the CLI's implied-flag cascade: --artikelstamm
+                // implies --extended (which implies nonpharma + calc)
+                // and the ZurRose price source.
+                opts.artikelstamm = true;
+                opts.artikelstamm_v5 = *self == RunMode::ArtikelstammV5;
+                opts.extended = true;
+                opts.nonpharma = true;
+                opts.calc = true;
+                opts.price = Some(PriceSource::ZurRose);
             }
         }
     }
@@ -169,6 +193,12 @@ impl GuiApp {
     /// the first-time confirmation dialog.
     fn request_run(&mut self, mode: RunMode) {
         if self.running_mode.is_some() || self.pending_run.is_some() {
+            // Visible feedback instead of a silently swallowed click —
+            // at large window sizes the spinner is easy to miss.
+            self.log.push(format!(
+                "{} click ignored — a run is already in progress.",
+                mode.label()
+            ));
             return;
         }
         self.pending_run = Some(mode);
@@ -230,8 +260,13 @@ impl GuiApp {
             let _ = tx_thread.send(Event::Log("Downloading sources...".into()));
             ctx_thread.request_repaint();
 
-            let cli = Cli::new(opts);
-            let result = cli.run_to_sqlite(&sqlite_path);
+            // catch_unwind so a panic anywhere in the pipeline still
+            // surfaces as an Error event — otherwise `running_mode`
+            // stays Some forever and every button is silently disabled.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let cli = Cli::new(opts);
+                cli.run_to_sqlite(&sqlite_path)
+            }));
 
             // Detach sinks before signalling completion so any late
             // stragglers don't sneak in after we mark the run done.
@@ -239,12 +274,22 @@ impl GuiApp {
             util::set_progress_sink(None);
 
             match result {
-                Ok(()) => {
+                Ok(Ok(())) => {
                     let _ = tx_thread.send(Event::Log("Done.".into()));
                     let _ = tx_thread.send(Event::Done(sqlite_path));
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     let _ = tx_thread.send(Event::Error(format!("{e:#}")));
+                }
+                Err(panic) => {
+                    let msg = panic
+                        .downcast_ref::<String>()
+                        .cloned()
+                        .or_else(|| panic.downcast_ref::<&str>().map(|s| s.to_string()))
+                        .unwrap_or_else(|| "unknown panic".to_string());
+                    let _ = tx_thread.send(Event::Error(format!(
+                        "worker thread panicked: {msg}"
+                    )));
                 }
             }
             ctx_thread.request_repaint();
@@ -476,7 +521,9 @@ impl eframe::App for GuiApp {
                             "This downloads the full Swiss public-domain medication \
                              dataset from BAG, Swissmedic, Refdata, EPha, LPPV and \
                              ZurRose / Firstbase, then builds a local SQLite \
-                             database you can browse offline.",
+                             database you can browse offline.  The standard \
+                             oddb XML files are written alongside it (see \
+                             \"Open Data Folder\").",
                         );
                         ui.add_space(6.0);
                         ui.label(RichText::new("What to expect").strong());
@@ -558,6 +605,29 @@ impl eframe::App for GuiApp {
                     .clicked()
                 {
                     self.request_run(RunMode::Firstbase);
+                }
+                if ui
+                    .add_enabled(!running, egui::Button::new(RichText::new("Artikelstamm v6").size(16.0)).min_size(egui::vec2(180.0, 36.0)))
+                    .on_hover_text(
+                        "Elexis Artikelstamm v6: writes artikelstamm_v6.xml \
+                         (+ CSV) into the data folder's xml/ subfolder, plus \
+                         the SQLite browser DB.",
+                    )
+                    .clicked()
+                {
+                    self.request_run(RunMode::ArtikelstammV6);
+                }
+                if ui
+                    .add_enabled(!running, egui::Button::new(RichText::new("Artikelstamm v5").size(16.0)).min_size(egui::vec2(180.0, 36.0)))
+                    .on_hover_text(
+                        "Legacy Elexis Artikelstamm v5 (no ARTSL element). \
+                         Like the CLI's --artikelstamm-v5 this also writes \
+                         the v6 — both land in the data folder's xml/ \
+                         subfolder, plus the SQLite browser DB.",
+                    )
+                    .clicked()
+                {
+                    self.request_run(RunMode::ArtikelstammV5);
                 }
 
                 // "Open Data Folder" — reveals `~/rust2xml/` in the
