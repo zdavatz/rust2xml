@@ -128,6 +128,14 @@ name belongs to the Ruby project.
 - ZurRose loading — CRLF handling bug fixed; all 177 K transfer.dat
   rows now extract correctly.
 - Firstbase — wired into `-b` pipeline as the 5th article source.
+  Since v3.1.30 the downloader also has oddb2xml 3.0.29's hardening:
+  `FirstbaseDownloader::is_firstbase_csv` rejects the HTML / "403 -
+  Forbidden" body GS1 returns when the GetFirstbaseHealthcare export is
+  unavailable, so a bad response can no longer overwrite (or truncate)
+  the cached `downloads/firstbase.csv`; the last-good copy is reused
+  instead and only a failure *without* a cache is an error. A present
+  cache is no longer reused blindly either — that now needs
+  `--skip-download`, so a normal run always tries GS1 for fresh data.
 
 ## Releasing
 
