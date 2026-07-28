@@ -45,7 +45,26 @@ impl Builder {
     /// Build the Artikelstamm XML.  `version` is 6 (default) or 5 (legacy,
     /// no `<ARTSL>`).  The namespace is `Elexis_Artikelstamm_v{version}`.
     pub fn build_artikelstamm(&self, version: u8) -> Result<String> {
-        let (products, used_lims) = self.artikelstamm_products();
+        let (products, mut used_lims) = self.artikelstamm_products();
+        // v6: every code referenced from an <ARTSL>/<ARTLIM>/<LIMCD>
+        // needs its description in <LIMITATIONS> too — that's where the
+        // per-Indikationscode limitation texts live (same packs and
+        // condition as `artsl_node`).
+        if version >= 6 {
+            for item in self.inputs.bag.values() {
+                for pkg in item.packages.values() {
+                    for lim in &pkg.limitations {
+                        if lim.indication_code.trim().is_empty() {
+                            continue;
+                        }
+                        let code = lim_code(lim);
+                        if !code.is_empty() {
+                            used_lims.insert(code.to_string());
+                        }
+                    }
+                }
+            }
+        }
         let limitations = self.artikelstamm_limitations(&used_lims);
         let items = self.artikelstamm_items(version);
 
@@ -905,7 +924,7 @@ fn artsl_node(pkg: &BagPackage) -> Option<Node> {
         if indcd.is_empty() {
             continue;
         }
-        if !seen.insert((lim.code.clone(), indcd.to_string())) {
+        if !seen.insert((lim_code(lim).to_string(), indcd.to_string())) {
             continue;
         }
         let mut fields = vec![

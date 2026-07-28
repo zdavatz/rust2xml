@@ -430,10 +430,46 @@ impl FhirExtractor {
             // or without `.NN` suffix).  Used to resolve limitation text
             // for the `limitationIndication` reference on RegulatedAuth.
             let mut bundle_cud_texts: HashMap<String, String> = HashMap::new();
+            // Product base name ("Abevmy Inf Konz 100 mg/4ml" -> "ABEVMY")
+            // for synthesizing limitation keys when the feed carries no
+            // ClinicalUseDefinition ids (live feed since mid-2026).
+            let mut bundle_base_name: Option<String> = None;
 
             for res in &resources {
                 match res.resource_type.as_str() {
                     "MedicinalProductDefinition" => {
+                        // First word of the (preferably German) productName,
+                        // uppercased — the base of the historical CUD-id
+                        // shape (`ABEVMY.01`) used as the limitation key.
+                        if bundle_base_name.is_none() {
+                            let mut de: Option<String> = None;
+                            let mut any: Option<String> = None;
+                            for n in &res.name {
+                                let pn = match &n.product_name {
+                                    Some(p) if !p.is_empty() => p,
+                                    _ => continue,
+                                };
+                                let lang = n
+                                    .usage
+                                    .first()
+                                    .and_then(|u| u.language.as_ref())
+                                    .and_then(|cc| cc.coding.first())
+                                    .and_then(|c| c.code.clone())
+                                    .unwrap_or_default();
+                                if lang.starts_with("de") {
+                                    de = Some(pn.clone());
+                                    break;
+                                }
+                                if any.is_none() {
+                                    any = Some(pn.clone());
+                                }
+                            }
+                            bundle_base_name = de.or(any).and_then(|name| {
+                                name.split_whitespace()
+                                    .next()
+                                    .map(|t| t.to_uppercase())
+                            });
+                        }
                         if let Some(id) = res.id.clone() {
                             medicinal.insert(id, (*res).clone());
                         }
@@ -612,6 +648,38 @@ impl FhirExtractor {
                             if let Some(text) = bundle_cud_texts.get(&lim.cud_ref) {
                                 lim.desc_de = text.clone();
                             }
+                        }
+                    }
+                }
+            }
+
+            // The live BAG feed (since mid-2026) ships every limitation
+            // text inline and contains no ClinicalUseDefinition resources
+            // at all, so limitations arrive without a CUD id — the value
+            // that serves as the limitation key (`LIMNAMEBAG` / `LIMCD`
+            // in the Artikelstamm).  Reconstruct the historical key shape
+            // (`ABEVMY.01` = product base name + `.NN` of the
+            // Indikationscode; bare base name for uncoded limitations) so
+            // keyed consumers keep resolving indication texts.
+            if let Some(base) = &bundle_base_name {
+                for pack_id in &bundle_pack_ids {
+                    if let Some((_, limitations)) = sl_data.get_mut(pack_id) {
+                        let mut uncoded = 0usize;
+                        for lim in limitations.iter_mut() {
+                            if !lim.cud_ref.is_empty() {
+                                continue;
+                            }
+                            lim.cud_ref = match lim.indication_code.rsplit_once('.') {
+                                Some((_, nn)) if !nn.is_empty() => format!("{base}.{nn}"),
+                                _ => {
+                                    uncoded += 1;
+                                    if uncoded == 1 {
+                                        base.clone()
+                                    } else {
+                                        format!("{base}.{uncoded}")
+                                    }
+                                }
+                            };
                         }
                     }
                 }
@@ -942,13 +1010,21 @@ pub fn merge_translations(
                 de_item.name_it = t_item.name_it.clone();
             }
             for (idx, t_lim) in t_pkg.limitations.into_iter().enumerate() {
-                let de_lim = if !t_lim.cud_ref.is_empty() {
+                // Match by cud_ref (stable across languages), falling
+                // back to position when the ref is absent or — with
+                // synthesized keys — the language editions disagree on
+                // the product base name.
+                let by_ref = if t_lim.cud_ref.is_empty() {
+                    None
+                } else {
                     de_pkg
                         .limitations
-                        .iter_mut()
-                        .find(|l| l.cud_ref == t_lim.cud_ref)
-                } else {
-                    de_pkg.limitations.get_mut(idx)
+                        .iter()
+                        .position(|l| l.cud_ref == t_lim.cud_ref)
+                };
+                let de_lim = match by_ref {
+                    Some(i) => de_pkg.limitations.get_mut(i),
+                    None => de_pkg.limitations.get_mut(idx),
                 };
                 let de_lim = match de_lim {
                     Some(x) => x,

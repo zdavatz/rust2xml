@@ -216,7 +216,16 @@ impl Builder {
                         Node::leaf("IT", lim.it.clone()),
                         Node::leaf("LIMTYP", lim.r#type.clone()),
                         Node::leaf("LIMVAL", lim.value.clone()),
-                        Node::leaf("LIMNAMEBAG", lim.code.clone()),
+                        // Ruby parity: the FHIR path has no BAG LIMCD, so
+                        // the (synthesized) CUD id serves as the key.
+                        Node::leaf(
+                            "LIMNAMEBAG",
+                            if lim.code.is_empty() {
+                                lim.cud_ref.clone()
+                            } else {
+                                lim.code.clone()
+                            },
+                        ),
                         Node::leaf("LIMNIV", lim.niv.clone()),
                         Node::leaf("DSCRD", lim.desc_de.clone()),
                         Node::leaf("DSCRF", lim.desc_fr.clone()),

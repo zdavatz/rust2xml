@@ -772,3 +772,74 @@ fn rogger_names_override_german_description_and_win_over_refdata_cleanup() {
         "expected the double-dose cleanup result without -r:\n{without}"
     );
 }
+
+#[test]
+fn fhir_inline_limitations_synthesize_keys_and_reach_artikelstamm_v6() {
+    use rust2xml::fhir_support::{merge_translations, FhirExtractor};
+
+    // Live-feed shape since mid-2026: no ClinicalUseDefinition resources;
+    // limitation texts inline under RA.indication[].extension[], coded ones
+    // carrying the `indicationCode` extension (e.g. 22064.01).
+    let de = include_str!("fixtures/abevmy_de.ndjson");
+    let mut bag = FhirExtractor::new(de.to_string()).to_hash().unwrap();
+    let fr = FhirExtractor::new_with_lang(
+        include_str!("fixtures/abevmy_fr.ndjson").to_string(),
+        "fr",
+    )
+    .to_hash()
+    .unwrap();
+    merge_translations(&mut bag, fr);
+
+    let item = bag.values().next().expect("one ABEVMY item");
+    let pkg = item.packages.values().next().expect("one package");
+    assert!(!pkg.limitations.is_empty(), "package has limitations");
+
+    // Coded limitation: key = product base name + `.NN` of the code.
+    let kolorektal = pkg
+        .limitations
+        .iter()
+        .find(|l| l.indication_code == "22064.01")
+        .expect("Indikationscode 22064.01 present");
+    assert_eq!(kolorektal.cud_ref, "ABEVMY.01");
+    assert!(
+        kolorektal.desc_de.starts_with("Kolorektalkarzinom"),
+        "German text resolved: {}",
+        kolorektal.desc_de
+    );
+    assert!(
+        kolorektal.desc_fr.starts_with("Carcinome colorectal"),
+        "French text merged by synthesized key: {}",
+        kolorektal.desc_fr
+    );
+
+    // Uncoded limitation (Biosimilar exchange): bare base name.
+    let uncoded = pkg
+        .limitations
+        .iter()
+        .find(|l| l.indication_code.is_empty())
+        .expect("uncoded limitation present");
+    assert_eq!(uncoded.cud_ref, "ABEVMY");
+
+    // Artikelstamm v6: the ARTSL-referenced codes must resolve to
+    // <LIMITATION> entries carrying the texts.
+    let inputs = Inputs {
+        bag,
+        release_date: "2026-07-28".into(),
+        ..Default::default()
+    };
+    let b = Builder::new(Options::default(), inputs);
+    let v6 = b.build_artikelstamm(6).unwrap();
+    assert!(
+        v6.contains("<LIMNAMEBAG>ABEVMY.01</LIMNAMEBAG>"),
+        "v6 LIMITATIONS carries the synthesized key:\n{}",
+        &v6[..2000]
+    );
+    assert!(v6.contains("Kolorektalkarzinom"), "v6 carries the German text");
+    assert!(v6.contains("Carcinome colorectal"), "v6 carries the French text");
+    assert!(v6.contains("<LIMCD>ABEVMY.01</LIMCD>"), "ARTSL references the key");
+
+    // v5 has no <ARTSL>, and without product-level references the
+    // indication limitations stay out of the v5 <LIMITATIONS>.
+    let v5 = b.build_artikelstamm(5).unwrap();
+    assert!(!v5.contains("<ARTSL>"), "v5 must not carry ARTSL");
+}
