@@ -288,7 +288,7 @@ except `--proxy-check`, including optimist's auto-assigned short flags:
 | `--tag-suffix <S>` | `-t` | XML tag suffix + filename prefix |
 | `--context <CTX>` | `-x` | `product` (default) or `address` |
 | `--calc` | | Only `oddb_calc.xml` |
-| `--skip-download` | | Reuse cached downloads |
+| `--skip-download` | | Reuse files already in `~/rust2xml/downloads/` (absent ones are still fetched). Without it every source is downloaded fresh. |
 | `--log` | | Log important actions |
 | `--use-ra11zip <PATH>` | | Use a zipped `transfer.dat` from Galexis |
 | `--firstbase` | `-b` | NONPHARMA via GS1 Switzerland CSV |

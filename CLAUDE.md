@@ -137,6 +137,30 @@ name belongs to the Ruby project.
   cache is no longer reused blindly either — that now needs
   `--skip-download`, so a normal run always tries GS1 for fresh data.
 
+## The download cache and `--skip-download`
+
+`~/rust2xml/downloads/` caches every raw upstream file. Since v3.1.31
+`util::skip_download_cached` consults it **only under `--skip-download`**;
+without the flag every source is fetched fresh.
+
+This differs from the Ruby original on purpose. Ruby's `Oddb2xml.skip_download`
+does not check the flag, because it does not have to: its `DOWNLOADS` is
+`./downloads` and `Cli#run` wipes that at the start of every run *unless* the
+flag is set (`cli.rb:51`), so an unflagged Ruby run always meets an empty
+cache. Ours is a persistent directory under `$HOME` that nothing ever wipes, so
+porting the check literally meant a file, once cached, was reused **forever** —
+the nightly Artikelstamm silently rebuilt from the previous day's sources.
+`scripts/run_artikelstamm.sh` papered over it with `rm -rf`, and
+`FirstbaseDownloader` / `SwissmedicInfo` each grew a private
+`skip_download_flag()` guard; the gate in `skip_download_cached` makes that the
+rule for every downloader.
+
+The deploy pattern is therefore the same as the Ruby nightly build's
+(`run_oddb2xml.sh` `seed_downloads`): wipe the cache, drop in the one file you
+want reused (the ZurRose `transfer.zip` from `get_transfer.sh`), and run with
+`--skip-download` — the seed is reused and everything absent is downloaded
+fresh.
+
 ## Releasing
 
 Release mechanics — tagging, the GitHub Actions matrix build, Mac App

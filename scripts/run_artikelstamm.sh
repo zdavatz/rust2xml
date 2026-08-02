@@ -31,9 +31,15 @@ cd "$REPO_DIR"
 log "Building rust2xml (release)"
 cargo build --release --bin rust2xml
 
-# Actually download fresh: rust2xml's skip_download cache never expires, so
-# without clearing it every nightly run silently rebuilds from the same old
-# sources (observed: all of ~/rust2xml/downloads still from the previous day).
+# Reset the cache so everything but the ZurRose seed below is fetched fresh.
+# This is the same wipe-then-seed-then---skip-download pattern the Ruby nightly
+# build uses (run_oddb2xml.sh seed_downloads): --skip-download reuses only what
+# is already in downloads/ and still fetches everything else.
+# The wipe is what makes the run fresh. rust2xml's cache lives in
+# ~/rust2xml/downloads/ and, unlike Ruby's ./downloads, is never cleared for
+# us; before v3.1.x skip_download_cached also ignored the flag, so a nightly
+# run silently rebuilt from the previous day's sources (observed: every file
+# in ~/rust2xml/downloads still from the day before).
 # Same file list as documented in CLAUDE.md (v3.1.10).
 log "Clearing download cache"
 rm -rf "$HOME/rust2xml/downloads"
@@ -45,7 +51,7 @@ rm -f "$HOME"/rust2xml/foph-*.ndjson "$HOME/rust2xml/transfer.zip" \
 # zurrose.ch on THIS host and uploads the zip to pillbox.oddb.org — fetching
 # it back from pillbox is a needless detour and a single point of failure
 # (2026-07-02: pillbox refused connections at 01:00 and killed the Ruby
-# nightly build). With the seed in downloads/, rust2xml's skip_download
+# nightly build). With the seed in downloads/, the --skip-download run below
 # reuses it; if the file is missing, the normal pillbox download runs.
 GET_TRANSFER_ZIP="${GET_TRANSFER_ZIP:-/home/zdavatz/software/get_transfer/TRANSFER.ZIP}"
 if [[ -s "$GET_TRANSFER_ZIP" ]]; then
@@ -56,8 +62,10 @@ else
   log "WARNING: $GET_TRANSFER_ZIP missing - falling back to pillbox.oddb.org download"
 fi
 
-log "Generating Artikelstamm v6 + v5 (fresh download)"
-./target/release/rust2xml --artikelstamm-v5 --log
+# --skip-download applies to the seeded transfer.zip only: the cache was just
+# wiped, so every other source is absent and gets downloaded fresh.
+log "Generating Artikelstamm v6 + v5 (fresh download, seeded ZurRose)"
+./target/release/rust2xml --artikelstamm-v5 --skip-download --log
 
 # Verify the four expected outputs exist.
 for f in artikelstamm_v6.xml artikelstamm_v6.csv artikelstamm_v5.xml artikelstamm_v5.csv; do

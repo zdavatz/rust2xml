@@ -271,12 +271,29 @@ pub fn log(msg: impl AsRef<str>) {
     }
 }
 
-/// Ruby `Oddb2xml.skip_download`: if a cached copy already exists under
-/// `downloads/`, copy it back into `file` and return true.  Short-circuits
-/// the actual network fetch.
+/// Ruby `Oddb2xml.skip_download`: if a cached copy exists under `downloads/`,
+/// copy it back into `file` and return true, short-circuiting the fetch.
+///
+/// Only consults the cache under `--skip-download`. The Ruby original does not
+/// check the flag, and does not need to: its `DOWNLOADS` is `./downloads` and
+/// `Cli#run` wipes that at the start of every run *unless* the flag is set
+/// (cli.rb:51), so an unflagged run always meets an empty cache. Ours is
+/// `~/rust2xml/downloads/` — persistent across runs and never wiped — so the
+/// same flag-blind check meant that once a file was cached it was reused
+/// forever: the nightly Artikelstamm job silently rebuilt from the previous
+/// day's sources, which is why `scripts/run_artikelstamm.sh` had to `rm -rf`
+/// the cache first, and why `FirstbaseDownloader` and `SwissmedicInfo` each
+/// grew their own `skip_download_flag()` guard. Gating here reproduces Ruby's
+/// effective behaviour for every downloader without deleting a user's cache.
+///
+/// No two downloaders share a basename, so unlike Ruby (whose cache refills
+/// during a run) there is no intra-run reuse to preserve.
 pub fn skip_download_cached(file: impl AsRef<Path>) -> bool {
     let file = file.as_ref();
     let opts = GLOBAL_OPTIONS.lock().clone();
+    if !opts.skip_download {
+        return false;
+    }
     let basename = match file.file_name() {
         Some(n) => n,
         None => return false,
@@ -529,6 +546,68 @@ pub fn preload_atc_csv(body: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Point work_dir/downloads_dir at a temp dir and set `skip_download`,
+    /// restoring the previous globals on drop.  Mirrors downloader.rs's
+    /// DirGuard; every test using it must be `#[serial]`, the globals are
+    /// process-wide.
+    struct OptsGuard {
+        saved: GlobalOptions,
+        _tmp: tempfile::TempDir,
+        dir: PathBuf,
+    }
+
+    impl OptsGuard {
+        fn new(skip_download: bool) -> Self {
+            let tmp = tempfile::tempdir().unwrap();
+            let dir = tmp.path().to_path_buf();
+            let saved = global_options();
+            save_options(GlobalOptions {
+                work_dir: dir.clone(),
+                downloads_dir: dir.clone(),
+                skip_download,
+                ..saved.clone()
+            });
+            Self { saved, _tmp: tmp, dir }
+        }
+    }
+
+    impl Drop for OptsGuard {
+        fn drop(&mut self) {
+            save_options(self.saved.clone());
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn skip_download_cached_reuses_the_cache_under_the_flag() {
+        let g = OptsGuard::new(true);
+        fs::write(g.dir.join("transfer.zip"), b"seeded").unwrap();
+        let target = g.dir.join("elsewhere").join("transfer.zip");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+
+        assert!(skip_download_cached(&target));
+        assert_eq!(fs::read(&target).unwrap(), b"seeded");
+    }
+
+    /// The regression: without --skip-download a cached file must NOT
+    /// short-circuit the fetch.  rust2xml's cache is ~/rust2xml/downloads/ and
+    /// is never wiped, so reusing it unconditionally froze the nightly
+    /// Artikelstamm on the previous day's sources.
+    #[test]
+    #[serial_test::serial]
+    fn skip_download_cached_ignores_the_cache_without_the_flag() {
+        let g = OptsGuard::new(false);
+        fs::write(g.dir.join("transfer.zip"), b"stale").unwrap();
+        let target = g.dir.join("elsewhere").join("transfer.zip");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+
+        assert!(!skip_download_cached(&target));
+        assert!(
+            !target.exists(),
+            "an unflagged run must fetch fresh, not copy the cached file back"
+        );
+    }
 
     #[test]
     fn gen_prodno_pads() {
