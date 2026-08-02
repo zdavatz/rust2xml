@@ -6,7 +6,12 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.17** — fixes empty
+Ruby gem, written in Rust. Current version: **v3.1.31**. Release
+history is on the [Releases
+page](https://github.com/zdavatz/rust2xml/releases) and in `git log`;
+the notes below cover selected earlier versions.
+
+v3.1.17 fixes empty
 `DSCRD` / `DSCRF` / `DSCRI` on every `<Limitation>` in `oddb_limitation.xml`
 under `--fhir`. The live BAG FHIR feed does not carry limitation text
 inline; the `regulatedAuthorization-limitation` extension only holds a

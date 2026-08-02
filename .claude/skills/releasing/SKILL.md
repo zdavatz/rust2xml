@@ -22,8 +22,36 @@ Each archive bundles `rust2xml`, `rust2xml-gui`, `compare_v5`,
 `.sha256` sidecar.  The
 workflow uploads everything to a GitHub Release with auto-generated
 notes.  Bumping the patch version is the normal release cadence:
-edit `Cargo.toml` version → commit → `git tag vX.Y.Z` → `git push
-origin vX.Y.Z`.
+edit `Cargo.toml` **and `src/version.rs`** → commit → `git tag vX.Y.Z`
+→ `git push origin main vX.Y.Z`.
+
+**Both version files, always.** `src/version.rs` holds a hand-written
+`pub const VERSION` that is not derived from `Cargo.toml`, and nothing
+in the build or CI cross-checks them. v3.1.31 shipped this way: the
+manifest said 3.1.31, the binary said 3.1.30, and because Cargo saw no
+change affecting codegen for that constant, `cargo build` finished in
+under a second with no recompile and no warning. It is not cosmetic —
+`artikelstamm.rs` writes `VERSION` into the generated XML as a
+`Produced by rust2xml version …` comment, so a stale constant is
+stamped into shipped data.
+
+The workflow will not catch it for you: it derives the release version
+from the **tag** (`version="${tag#v}"`), never from the binary, so a
+mismatched pair produces a release named for the tag containing a
+binary that reports something else. `cargo test --all --release` runs
+in CI but never invokes the binary. Verify by hand after building:
+
+```sh
+cargo build --release --bin rust2xml
+./target/release/rust2xml --version 2>&1   # must match the tag
+```
+
+Note the `2>&1`: `--version` and `--help` currently print to **stderr**
+and exit **2**, because `options.rs` flattens clap's error with
+`.map_err(|e| e.to_string())` and so cannot distinguish `DisplayHelp` /
+`DisplayVersion` (clap's success signals, delivered as `Err`) from a
+real usage error. Do not use either as a shell success check until that
+is fixed.
 
 The workflow also has a `workflow_dispatch` trigger so releases can
 be re-run by hand from the Actions tab if an upload fails midway.
