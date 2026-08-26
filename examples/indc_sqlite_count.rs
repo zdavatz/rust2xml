@@ -1,7 +1,7 @@
 //! One-off probe: run the FHIR feed through Builder + sqlite_export
 //! and count Indikationscodes in the resulting SQLite tables.
 //!
-//!     cargo run --release --example indc_sqlite_count -- /path/to/foph-sl-export-latest-de.ndjson
+//!     cargo run --release --example indc_sqlite_count -- /path/to/foph-sl-publication-latest-de.ndjson
 
 use rust2xml::builder::{Builder, Inputs};
 use rust2xml::fhir_support::FhirExtractor;
@@ -15,7 +15,7 @@ use std::path::PathBuf;
 fn main() -> anyhow::Result<()> {
     let ndjson_path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "foph-sl-export-latest-de.ndjson".into());
+        .unwrap_or_else(|| "foph-sl-publication-latest-de.ndjson".into());
     let ndjson = fs::read_to_string(&ndjson_path)?;
     println!("Reading {} ({} bytes)", ndjson_path, ndjson.len());
 

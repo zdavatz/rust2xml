@@ -15,8 +15,17 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
 
+// BAG moved the export on 24.08.2026 and announced it the next evening:
+// /static/fhir/foph-sl-export-* became
+// /static/sl/publication/fhir/foph-sl-publication-*.
+//
+// The old -latest- alias answers 404 while the old dated snapshots stay in
+// place, so the failure is a run that downloads nothing and reports success -
+// not a crash. There is no language-less default any more; per BAG every url
+// has to name de, fr or it. A preliminary publication now exists in parallel
+// under /static/sl/preliminary/fhir/foph-sl-preliminary-*, which we do not use.
 pub const DEFAULT_FHIR_URL: &str =
-    "https://epl.bag.admin.ch/static/fhir/foph-sl-export-latest-de.ndjson";
+    "https://epl.bag.admin.ch/static/sl/publication/fhir/foph-sl-publication-latest-de.ndjson";
 
 /// Minimal FHIR resource shape — we only deserialize the fields we need.
 /// Everything else is ignored so the schema can evolve.  This struct

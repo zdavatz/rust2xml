@@ -144,7 +144,7 @@ seven XML files:
 
 - **Always FHIR.** The GUI hard-wires `--fhir` for both buttons and
   pulls from the FOPH ePL feed
-  (`https://epl.bag.admin.ch/static/fhir/foph-sl-export-latest-de.ndjson`).
+  (`https://epl.bag.admin.ch/static/sl/publication/fhir/foph-sl-publication-latest-de.ndjson`).
   Ex-factory + retail prices and limitation texts come straight out of
   the package-level `RegulatedAuthorization` resources.
 - `Run -e (Extended)` and `Run -b (Firstbase)` start the
@@ -153,7 +153,7 @@ seven XML files:
 - A progress bar reports per-job completion (BAG/FHIR, Refdata,
   Swissmedic, EPha, LPPV, ZurRose, Firstbase) plus the builder + SQLite
   write phases. The bar's caption updates live during the active
-  download (`foph-sl-export-latest-de.ndjson: 30 MB / 89 MB (34%)`)
+  download (`foph-sl-publication-latest-de.ndjson: 30 MB / 89 MB (34%)`)
   so a long single-file fetch — typically the 90+ MB FHIR NDJSON or
   the 150 MB Firstbase CSV — never looks like a hang.
 - The three FHIR language bundles (`-de.ndjson` / `-fr.ndjson` /
