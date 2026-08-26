@@ -128,7 +128,7 @@ Four binaries land in `target/release/`:
 # Additionally emit the legacy v5 (no <ARTSL>) → artikelstamm_v5.xml + .csv
 ./target/release/rust2xml --artikelstamm-v5
 
-# Cache downloads — re-uses files already under ./downloads/
+# Reuse files already under ~/rust2xml/downloads/ (absent ones still fetched)
 ./target/release/rust2xml -e --skip-download --log
 ```
 
@@ -315,7 +315,7 @@ Implied-flag cascade (same behaviour as Ruby):
 cargo test              # unit + integration
 ```
 
-58 unit tests + 1 integration test:
+86 unit tests + 8 integration tests:
 
 - 23 option-parity tests (one per Ruby flag + every implied-flag
   cascade rule).
@@ -328,8 +328,15 @@ cargo test              # unit + integration
   list, multi-line).
 - Extractor tests for LPPV text files and EPha CSV.
 - Builder tests confirming SHA256 attribute emission.
-- Integration test that roundtrips a BAG XML fixture through extractor
-  → builder and asserts the SHA256 / content plumbing.
+- Downloader tests for the GS1 error-page rejection and the
+  last-good `firstbase.csv` fallback.
+- `rogger_names` tests (parse, GTIN padding, sign-in-page rejection →
+  bundled fallback, German-only override).
+- Integration tests (`tests/pipeline.rs`) that roundtrip BAG XML and
+  FHIR NDJSON fixtures through extractor → builder: SHA256 / content
+  plumbing, Indikationscodes in three languages, synthesized limitation
+  keys reaching Artikelstamm v6, and the Rogger override winning over
+  the Refdata cleanup.
 
 ## Refdata data-quality compensation
 

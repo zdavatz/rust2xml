@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss Healthcare Public Domain data files (XML, SQLite, CSV, DAT). All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 71 unit tests + 6 integration tests pass.
+Rust port of **oddb2xml** — the Ruby tool (~14,261 LOC across 20 modules) that generates Swiss Healthcare Public Domain data files (XML, SQLite, CSV, DAT). All 20 Ruby modules have a corresponding Rust module; the crate builds clean on stable Rust, 86 unit tests + 8 integration tests pass.
 
 Current version: **v3.1.32**.
 
@@ -113,7 +113,7 @@ name belongs to the Ruby project.
   `emit_salecd` NINCD logic). Cross-consistency semantic checks
   (`everyPharmaArticleHasAProductItem`) are not yet guaranteed.
 - **RSpec port.** 16 spec files / ~6,500 lines of RSpec. Currently
-  58 unit + 1 integration Rust tests cover the architectural pieces;
+  86 unit + 8 integration Rust tests cover the architectural pieces;
   per-file RSpec parity is not yet complete.
 - **`oddb_calc.xml` content density still trails Ruby** (12 MB vs
   41 MB). Record count is in the right ballpark; the gap is in
