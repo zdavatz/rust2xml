@@ -6,7 +6,7 @@ ZurRose, EPha, Migel, Firstbase) and emits a bundle of XML files
 plus an optional legacy `.dat`.
 
 Functional successor to the [oddb2xml](https://github.com/zdavatz/oddb2xml)
-Ruby gem, written in Rust. Current version: **v3.1.31**. Release
+Ruby gem, written in Rust. Current version: **v3.1.32**. Release
 history is on the [Releases
 page](https://github.com/zdavatz/rust2xml/releases) and in `git log`;
 the notes below cover selected earlier versions.
